@@ -1,0 +1,36 @@
+/* 全体設定 */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body, html { width: 100%; height: 100%; font-family: 'Courier New', monospace; background-color: #1e1e1e; color: #d4d4d4; overflow: hidden; }
+
+.screen { width: 100%; height: 100vh; display: flex; flex-direction: column; }
+.hidden { display: none !important; }
+
+/* 1. エディタ画面のスタイリング */
+.top-bar { height: 45px; background: #252526; display: flex; justify-content: space-between; align-items: center; padding: 0 12px; border-bottom: 1px solid #3c3c3c; }
+.file-info { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.file-icon { background: #007acc; color: #fff; font-size: 10px; padding: 2px 4px; border-radius: 3px; font-weight: bold; }
+.file-name { color: #cccccc; }
+
+/* 隠し切り替えボタン（Commit Changes） */
+.btn-commit { background: #238636; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; }
+.btn-commit:active { background: #2ea043; }
+
+.editor-container { flex: 1; display: flex; background: #1e1e1e; padding: 10px 0; }
+.line-numbers { width: 35px; color: #858585; text-align: right; padding-right: 10px; font-size: 13px; line-height: 1.5; user-select: none; }
+.code-area { flex: 1; background: transparent; border: none; color: #9cdcfe; font-family: inherit; font-size: 13px; line-height: 1.5; resize: none; outline: none; white-space: pre; }
+
+/* 2. 隠しチャット画面のスタイリング */
+.secret-bar { background: #111; font-family: sans-serif; }
+.partner-status { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.status-dot { width: 8px; height: 8px; background: #4caf50; border-radius: 50%; }
+.btn-call, .btn-hide { background: #333; color: white; border: none; padding: 5px 10px; border-radius: 4px; font-size: 12px; margin-left: 5px; }
+
+.chat-container { flex: 1; display: flex; flex-direction: column; background: #0a0a0a; font-family: sans-serif; }
+.message-list { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.system-msg { text-align: center; color: #666; font-size: 11px; margin-bottom: 10px; }
+.msg { max-width: 75%; padding: 8px 12px; border-radius: 12px; font-size: 14px; line-height: 1.4; }
+.my-msg { align-self: flex-end; background: #007acc; color: white; border-bottom-right-radius: 2px; }
+
+.chat-input-area { padding: 10px; background: #181818; display: flex; gap: 8px; }
+.chat-input-area input { flex: 1; background: #2a2a2a; border: none; padding: 10px; border-radius: 20px; color: white; outline: none; }
+.chat-input-area button { background: #007acc; color: white; border: none; padding: 0 15px; border-radius: 20px; font-weight: bold; }
