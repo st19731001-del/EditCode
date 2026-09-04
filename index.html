@@ -24,7 +24,6 @@
         <span class="file-icon">JS</span>
         <span class="file-name">analytics_core.js</span>
       </div>
-      <!-- 隠し切替ボタン -->
       <button class="btn-commit" onclick="switchToSecret()">Commit Changes</button>
     </header>
 
@@ -67,14 +66,43 @@ export function trackUserSession(sessionId) {
       <div class="message-list" id="message-list">
         <div class="system-msg">暗号化されたP2P通信が有効です</div>
       </div>
+
+      <!-- スタンプ選択パレット（初期状態は非表示） -->
+      <div id="stamp-palette" class="stamp-palette hidden">
+        <div class="stamp-grid">
+          <span onclick="sendStamp('👍')">👍</span>
+          <span onclick="sendStamp('❤️')">❤️</span>
+          <span onclick="sendStamp('😂')">😂</span>
+          <span onclick="sendStamp('😭')">😭</span>
+          <span onclick="sendStamp('🎉')">🎉</span>
+          <span onclick="sendStamp('🔥')">🔥</span>
+          <span onclick="sendStamp('🙏')">🙏</span>
+          <span onclick="sendStamp('✨')">✨</span>
+          <span onclick="sendStamp('👌')">👌</span>
+          <span onclick="sendStamp('🥺')">🥺</span>
+          <span onclick="sendStamp('😎')">😎</span>
+          <span onclick="sendStamp('😴')">😴</span>
+        </div>
+      </div>
+
+      <!-- メッセージ入力エリア（キーボードの学習・自動補完を無効化） -->
       <div class="chat-input-area">
-        <input type="text" id="chat-input" placeholder="メッセージを入力...">
+        <button class="btn-stamp" onclick="toggleStampPalette()">😊</button>
+        <input 
+          type="text" 
+          id="chat-input" 
+          placeholder="メッセージを入力..."
+          autocomplete="off" 
+          autocorrect="off" 
+          autocapitalize="off" 
+          spellcheck="false"
+          data-form-type="other"
+        >
         <button onclick="sendMsg()">送信</button>
       </div>
     </div>
   </div>
 
-  <!-- JavaScriptロジックの読み込み -->
   <script src="./app.js"></script>
 </body>
 </html>
