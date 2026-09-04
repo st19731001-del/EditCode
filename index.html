@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EditCode</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="./style.css">
+  <!-- WebRTCライブラリ (PeerJS) -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
 
@@ -15,7 +17,7 @@
         <span class="file-icon">JS</span>
         <span class="file-name">analytics_core.js</span>
       </div>
-      <!-- 隠し切替ボタン（一般人にはコード提出ボタンに見える） -->
+      <!-- 隠し切替ボタン -->
       <button class="btn-commit" onclick="switchToSecret()">Commit Changes</button>
     </header>
 
@@ -48,60 +50,24 @@ export function trackUserSession(sessionId) {
     <header class="top-bar secret-bar">
       <div class="partner-status">
         <span class="status-dot"></span>
-        <span class="partner-name">Partner</span>
+        <span class="partner-name">Partner (Offline)</span>
       </div>
-      <button class="btn-call" onclick="alert('ステップ2で通話機能を実装します')">📞 通話</button>
+      <button class="btn-call" onclick="startCall()">📞 通話</button>
       <button class="btn-hide" onclick="hideToEditor()">🔒 隠す</button>
     </header>
 
     <div class="chat-container">
       <div class="message-list" id="message-list">
-        <div class="system-msg">暗号化されたチャットが開始されました</div>
+        <div class="system-msg">暗号化されたP2P通信が有効です</div>
       </div>
       <div class="chat-input-area">
         <input type="text" id="chat-input" placeholder="メッセージを入力...">
-        <button onclick="sendDummyMsg()">送信</button>
+        <button onclick="sendMsg()">送信</button>
       </div>
     </div>
   </div>
 
-  <script>
-    // 画面切り替え：エディタ ➔ 隠しチャット
-    function switchToSecret() {
-      document.getElementById('editor-screen').classList.add('hidden');
-      document.getElementById('secret-screen').classList.remove('hidden');
-    }
-
-    // 緊急回避：隠しチャット ➔ エディタ
-    function hideToEditor() {
-      document.getElementById('secret-screen').classList.add('hidden');
-      document.getElementById('editor-screen').classList.remove('hidden');
-    }
-
-    // 傾きセンサー（スマホを伏せる / 急に傾けると緊急回避）
-    if (window.DeviceOrientationEvent) {
-      window.addEventListener('deviceorientation', function(event) {
-        // beta: スマホの前後傾き（-180〜180）
-        // スマホを完全に伏せた時（betaが-170以下または170以上）に緊急退避
-        if (event.beta < -150 || event.beta > 150) {
-          hideToEditor();
-        }
-      });
-    }
-
-    // 簡易動作テスト用（送信処理）
-    function sendDummyMsg() {
-      const input = document.getElementById('chat-input');
-      if (!input.value.trim()) return;
-      
-      const list = document.getElementById('message-list');
-      const msg = document.createElement('div');
-      msg.className = 'msg my-msg';
-      msg.innerText = input.value;
-      list.appendChild(msg);
-      input.value = '';
-      list.scrollTop = list.scrollHeight;
-    }
-  </script>
+  <!-- JavaScriptロジックの読み込み -->
+  <script src="./app.js"></script>
 </body>
 </html>
