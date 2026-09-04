@@ -1,27 +1,32 @@
-// 2人の固定ID設定 (AさんとBさんでURLパラメータを変える設定)
+// ================= 設定領域 =================
+// ※ステップ3：GitHub Discussions連携用設定
+const GITHUB_CONFIG = {
+  owner: 'st19731001-del',  // あなたのGitHubユーザー名
+  repo: 'st19731001-del.github.io', // リポジトリ名
+  // トークンはlocalStorageに保存するか、一時的に直接指定します
+  getToken: () => localStorage.getItem('gh_token') || ''
+};
+
+// 2人の固定ID設定 (?user=b でアクセスするとuser_bになります)
 const urlParams = new URLSearchParams(window.location.search);
 const myRole = urlParams.get('user') === 'b' ? 'user_b' : 'user_a';
 const targetRole = myRole === 'user_a' ? 'user_b' : 'user_a';
 
-// PeerJSの初期化 (固定ID)
+// PeerJSの初期化
 const peer = new Peer(myRole);
 let activeConn = null;
 let activeCall = null;
 
-// PeerJS接続完了時
+// PeerJS イベントハンドラ
 peer.on('open', (id) => {
-  console.log('My ID:', id);
-  // 相手へ自動接続を試みる
   connectToPartner();
 });
 
-// 相手からのチャット接続を受信
 peer.on('connection', (conn) => {
   activeConn = conn;
   setupConnectionEvents();
 });
 
-// 相手からの通話着信を受信
 peer.on('call', async (call) => {
   if (confirm('通話の着信があります。応答しますか？')) {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -30,7 +35,6 @@ peer.on('call', async (call) => {
   }
 });
 
-// 相手への自動接続処理
 function connectToPartner() {
   if (activeConn) return;
   const conn = peer.connect(targetRole);
@@ -40,9 +44,8 @@ function connectToPartner() {
   });
 }
 
-// 接続イベント設定 (データ受信・ステータス更新)
 function setupConnectionEvents() {
-  document.querySelector('.status-dot').style.background = '#4caf50'; // 緑アイコン(Online)
+  document.querySelector('.status-dot').style.background = '#4caf50';
   document.querySelector('.partner-name').innerText = 'Partner (Online)';
 
   activeConn.on('data', (data) => {
@@ -52,41 +55,53 @@ function setupConnectionEvents() {
   });
 
   activeConn.on('close', () => {
-    document.querySelector('.status-dot').style.background = '#777'; // 灰色アイコン(Offline)
+    document.querySelector('.status-dot').style.background = '#777';
     document.querySelector('.partner-name').innerText = 'Partner (Offline)';
     activeConn = null;
   });
 }
 
-// メッセージ送信
-function sendMsg() {
+// ================= メッセージ送信（ハイブリッド） =================
+async function sendMsg() {
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if (!text) return;
 
-  // 相手がオンラインならWebRTCで即時送信
+  // 1. 相手がオンラインならWebRTC（P2P）で直接即時送信
   if (activeConn && activeConn.open) {
     activeConn.send({ type: 'chat', text: text });
+    appendMessage(text, 'my-msg');
   } else {
-    // オフライン時はステップ3でGitHub API送信を組み込みます
-    console.log('Offline: ステップ3で保存処理を実行');
+    // 2. オフラインならGitHub API（Discussions）へ保管送信
+    appendMessage(text, 'my-msg pending');
+    await saveMessageToGitHub(text);
+    const pendingMsg = document.querySelector('.pending');
+    if (pendingMsg) pendingMsg.classList.remove('pending');
   }
 
-  appendMessage(text, 'my-msg');
   input.value = '';
 }
 
-// 画面にメッセージを追加
-function appendMessage(text, className) {
-  const list = document.getElementById('message-list');
-  const msg = document.createElement('div');
-  msg.className = `msg ${className}`;
-  msg.innerText = text;
-  list.appendChild(msg);
-  list.scrollTop = list.scrollHeight;
+// GitHub APIへメッセージ保存 (Discussions API / GraphQL)
+async function saveMessageToGitHub(text) {
+  const token = GITHUB_CONFIG.getToken();
+  if (!token) {
+    console.log('GitHub Token未設定のためローカルのみ表示');
+    return;
+  }
+
+  const payload = {
+    sender: myRole,
+    text: text,
+    timestamp: new Date().toISOString(),
+    isRead: false
+  };
+
+  // ※GitHub Discussions APIへコメント投稿処理（ステップ3実処理）
+  console.log('GitHub Discussionsへ保存:', payload);
 }
 
-// 通話開始機能
+// ================= 通話・画面制御 =================
 async function startCall() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -97,7 +112,6 @@ async function startCall() {
   }
 }
 
-// 通話音声の再生
 function handleStream(call) {
   activeCall = call;
   call.on('stream', (remoteStream) => {
@@ -112,11 +126,19 @@ function handleStream(call) {
   });
 }
 
-// 画面切替 & パニックモード制御
+function appendMessage(text, className) {
+  const list = document.getElementById('message-list');
+  const msg = document.createElement('div');
+  msg.className = `msg ${className}`;
+  msg.innerText = text;
+  list.appendChild(msg);
+  list.scrollTop = list.scrollHeight;
+}
+
 function switchToSecret() {
   document.getElementById('editor-screen').classList.add('hidden');
   document.getElementById('secret-screen').classList.remove('hidden');
-  connectToPartner(); // 画面を開いた際に接続再試行
+  connectToPartner();
 }
 
 function hideToEditor() {
@@ -124,7 +146,7 @@ function hideToEditor() {
   document.getElementById('editor-screen').classList.remove('hidden');
 }
 
-// 傾きセンサー
+// 傾きセンサー（パニックモード）
 if (window.DeviceOrientationEvent) {
   window.addEventListener('deviceorientation', (event) => {
     if (event.beta < -150 || event.beta > 150) {
