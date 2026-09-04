@@ -1,9 +1,7 @@
 // ================= 設定領域 =================
-// ※ステップ3：GitHub Discussions連携用設定
 const GITHUB_CONFIG = {
-  owner: 'st19731001-del',  // あなたのGitHubユーザー名
-  repo: 'st19731001-del.github.io', // リポジトリ名
-  // トークンはlocalStorageに保存するか、一時的に直接指定します
+  owner: 'st19731001-del',
+  repo: 'st19731001-del.github.io',
   getToken: () => localStorage.getItem('gh_token') || ''
 };
 
@@ -50,7 +48,7 @@ function setupConnectionEvents() {
 
   activeConn.on('data', (data) => {
     if (data.type === 'chat') {
-      appendMessage(data.text, 'partner-msg');
+      appendMessage(data.text, 'partner-msg', data.isStamp);
     }
   });
 
@@ -61,43 +59,55 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= メッセージ送信（ハイブリッド） =================
+// ================= メッセージ送信 =================
 async function sendMsg() {
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if (!text) return;
 
-  // 1. 相手がオンラインならWebRTC（P2P）で直接即時送信
+  await dispatchMessage(text, false);
+  input.value = '';
+  // 送信時にスタンプパレットが開いていれば閉じる
+  document.getElementById('stamp-palette').classList.add('hidden');
+}
+
+// ================= スタンプ送信 =================
+async function sendStamp(emoji) {
+  await dispatchMessage(emoji, true);
+  document.getElementById('stamp-palette').classList.add('hidden');
+}
+
+// 通信用共通送信関数
+async function dispatchMessage(text, isStamp = false) {
   if (activeConn && activeConn.open) {
-    activeConn.send({ type: 'chat', text: text });
-    appendMessage(text, 'my-msg');
+    activeConn.send({ type: 'chat', text: text, isStamp: isStamp });
+    appendMessage(text, 'my-msg', isStamp);
   } else {
-    // 2. オフラインならGitHub API（Discussions）へ保管送信
-    appendMessage(text, 'my-msg pending');
-    await saveMessageToGitHub(text);
+    appendMessage(text, 'my-msg pending', isStamp);
+    await saveMessageToGitHub(text, isStamp);
     const pendingMsg = document.querySelector('.pending');
     if (pendingMsg) pendingMsg.classList.remove('pending');
   }
-
-  input.value = '';
 }
 
-// GitHub APIへメッセージ保存 (Discussions API / GraphQL)
-async function saveMessageToGitHub(text) {
+// スタンプパレット開閉表示
+function toggleStampPalette() {
+  const palette = document.getElementById('stamp-palette');
+  palette.classList.toggle('hidden');
+}
+
+// GitHub APIへメッセージ保存 (Discussions API)
+async function saveMessageToGitHub(text, isStamp = false) {
   const token = GITHUB_CONFIG.getToken();
-  if (!token) {
-    console.log('GitHub Token未設定のためローカルのみ表示');
-    return;
-  }
+  if (!token) return;
 
   const payload = {
     sender: myRole,
     text: text,
+    isStamp: isStamp,
     timestamp: new Date().toISOString(),
     isRead: false
   };
-
-  // ※GitHub Discussions APIへコメント投稿処理（ステップ3実処理）
   console.log('GitHub Discussionsへ保存:', payload);
 }
 
@@ -126,10 +136,10 @@ function handleStream(call) {
   });
 }
 
-function appendMessage(text, className) {
+function appendMessage(text, className, isStamp = false) {
   const list = document.getElementById('message-list');
   const msg = document.createElement('div');
-  msg.className = `msg ${className}`;
+  msg.className = `msg ${className} ${isStamp ? 'stamp-msg' : ''}`;
   msg.innerText = text;
   list.appendChild(msg);
   list.scrollTop = list.scrollHeight;
@@ -144,6 +154,7 @@ function switchToSecret() {
 function hideToEditor() {
   document.getElementById('secret-screen').classList.add('hidden');
   document.getElementById('editor-screen').classList.remove('hidden');
+  document.getElementById('stamp-palette').classList.add('hidden');
 }
 
 // 傾きセンサー（パニックモード）
