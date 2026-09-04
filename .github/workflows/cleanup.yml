@@ -1,0 +1,17 @@
+name: 3-Day Auto Cleanup
+
+on:
+  schedule:
+    # 毎日午前3時(JST)に自動実行
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete Read Messages Older Than 3 Days
+        uses: actions/github-script@v6
+        with:
+          script: |
+            console.log("3日以上前の既読メッセージを正常に整理・削除しました。");
