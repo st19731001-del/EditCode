@@ -48,8 +48,11 @@ export function trackUserSession(sessionId) {
   logEvent(analytics, 'session_start', { id: sessionId });
 }
 
-// TODO: Implement custom telemetry event batching
-console.log("Analytics engine initialized successfully.");</textarea>
+export function logCustomMetric(metricName, metricValue) {
+  logEvent(analytics, metricName, { value: metricValue });
+}
+
+console.log("Analytics engine initialized.");</textarea>
       </div>
     </div>
 
