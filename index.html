@@ -5,14 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EditCode</title>
   
-  <!-- PWA & アイコン設定 -->
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" href="./icon.png" type="image/png">
   <link rel="apple-touch-icon" href="./icon.png">
   <meta name="theme-color" content="#252526">
 
   <link rel="stylesheet" href="./style.css">
-  <!-- WebRTCライブラリ (PeerJS) -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
@@ -67,7 +65,7 @@ export function trackUserSession(sessionId) {
         <div class="system-msg">暗号化されたP2P通信が有効です</div>
       </div>
 
-      <!-- スタンプ選択パレット（初期状態は非表示） -->
+      <!-- スタンプ選択パレット -->
       <div id="stamp-palette" class="stamp-palette hidden">
         <div class="stamp-grid">
           <span onclick="sendStamp('👍')">👍</span>
@@ -85,7 +83,16 @@ export function trackUserSession(sessionId) {
         </div>
       </div>
 
-      <!-- メッセージ入力エリア（キーボードの学習・自動補完を無効化） -->
+      <!-- リプライプレビュー（初期状態は非表示） -->
+      <div id="reply-preview" class="reply-preview hidden">
+        <div class="reply-content">
+          <span class="reply-title">返信先:</span>
+          <span id="reply-text" class="reply-text"></span>
+        </div>
+        <button class="btn-cancel-reply" onclick="cancelReply()">✕</button>
+      </div>
+
+      <!-- メッセージ入力エリア -->
       <div class="chat-input-area">
         <button class="btn-stamp" onclick="toggleStampPalette()">😊</button>
         <input 
