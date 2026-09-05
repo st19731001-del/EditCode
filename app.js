@@ -1,7 +1,7 @@
 // ================= 設定領域 =================
 const GITHUB_CONFIG = {
   owner: 'st19731001-del',
-  repo: 'EditCode', // ← ここを st19731001-del.github.io から変更！
+  repo: 'EditCode',
   getToken: () => {
     try {
       return localStorage.getItem('gh_token') || '';
@@ -46,6 +46,13 @@ function saveStoredMessages(messages) {
 // 初期化処理
 window.addEventListener('DOMContentLoaded', () => {
   setupJSIconTrigger();
+  // 起動時に最終行へカーソルを合わせる
+  const codeArea = document.getElementById('code-area');
+  if (codeArea) {
+    codeArea.focus();
+    codeArea.setSelectionRange(codeArea.value.length, codeArea.value.length);
+  }
+
   if (sessionStorage.getItem('open_secret_screen') === 'true') {
     switchToSecret();
   }
@@ -102,23 +109,18 @@ function setupConnectionEvents() {
     markMyMessagesAsRead();
   }
 
-  // データ受信時の強固な描画処理
   activeConn.on('data', (data) => {
     if (data.type === 'chat') {
       const msgObj = {
         id: data.id,
         text: data.text,
         replyText: data.replyText || null,
-        sender: 'partner', // 受信メッセージは強制的に相手（partner）として処理
+        sender: 'partner',
         isStamp: data.isStamp,
         isRead: true,
         timestamp: Date.now()
       };
-      
-      // 保存＆描画を実行
       saveAndRenderNewMessage(msgObj);
-      
-      // 既読通知を相手に返送
       activeConn.send({ type: 'read_ack', id: data.id });
     } else if (data.type === 'read_ack') {
       markMyMessagesAsRead(data.id);
@@ -154,7 +156,7 @@ function showDummyCommitToast() {
   }, 1500);
 }
 
-// ================= メッセージ非表示 / 表示切替 =================
+// ================= メッセージ非表示 / 表示切替（アイコンのみ対応） =================
 function toggleMessageVisibility() {
   const list = document.getElementById('message-list');
   const inputArea = document.getElementById('input-area');
@@ -165,11 +167,11 @@ function toggleMessageVisibility() {
   if (list.classList.contains('hidden-messages')) {
     list.classList.remove('hidden-messages');
     if (inputArea) inputArea.classList.remove('hidden-input');
-    if (btn) btn.innerText = '🙈 非表示';
+    if (btn) btn.innerText = '🙈'; // アイコンのみに変更
   } else {
     list.classList.add('hidden-messages');
     if (inputArea) inputArea.classList.add('hidden-input');
-    if (btn) btn.innerText = '👁️ 表示';
+    if (btn) btn.innerText = '👁️'; // アイコンのみに変更
     const palette = document.getElementById('stamp-palette');
     if (palette) palette.classList.add('hidden');
   }
@@ -337,7 +339,6 @@ function renderAllMessages() {
 
 function saveAndRenderNewMessage(msgObj) {
   const messages = getStoredMessages();
-  // 重複追加防止チェック
   if (!messages.some(m => m.id === msgObj.id)) {
     messages.push(msgObj);
     saveStoredMessages(messages);
@@ -349,7 +350,6 @@ function renderSingleMessage(m) {
   const list = document.getElementById('message-list');
   if (!list) return;
 
-  // 既に描画済みならスキップ
   if (document.querySelector(`[data-id="${m.id}"]`)) return;
 
   const msgContainer = document.createElement('div');
@@ -509,7 +509,7 @@ function toggleStampPalette() {
 // ================= 通話・画面制御 =================
 async function startCall() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: title => true });
     const call = peer.call(targetRole, stream);
     handleStream(call);
   } catch (err) {
@@ -554,7 +554,7 @@ function switchToSecret() {
   
   if (list) list.classList.add('hidden-messages');
   if (inputArea) inputArea.classList.add('hidden-input');
-  if (btn) btn.innerText = '👁️ 表示';
+  if (btn) btn.innerText = '👁️'; // アイコンのみ
 
   const roleDisplay = document.getElementById('role-display');
   const isOnline = activeConn && activeConn.open;
