@@ -19,7 +19,6 @@
   <div id="editor-screen" class="screen">
     <header class="top-bar">
       <div class="file-info">
-        <!-- 青いJSアイコン（ここを3回タップで切替） -->
         <span class="file-icon" id="js-icon-trigger">JS</span>
         <span class="file-name">analytics_core.js</span>
       </div>
@@ -31,7 +30,8 @@
         1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15
       </div>
       <div class="code-area-wrapper">
-        <textarea class="code-area" id="code-area" spellcheck="false" readonly>// System Core Analytics Module v2.4.1
+        <!-- readonlyを削除し、完全に編集可能なテキストエリアに戻しました -->
+        <textarea class="code-area" id="code-area" spellcheck="false">// System Core Analytics Module v2.4.1
 import { initializeApp } from 'firebase/app';
 import { getAnalytics, logEvent } from 'firebase/analytics';
 
@@ -98,7 +98,6 @@ export function trackUserSession(sessionId) {
         <button class="btn-cancel-reply" onclick="cancelReply()">✕</button>
       </div>
 
-      <!-- 入力エリア（非表示時は隠れる設定） -->
       <div class="chat-input-area hidden-input" id="input-area">
         <button class="btn-stamp" onclick="toggleStampPalette()">😊</button>
         <input 
