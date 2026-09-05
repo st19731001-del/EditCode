@@ -66,11 +66,21 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= メッセージ送信 =================
+// ================= メッセージ送信 (トークン自動登録対応) =================
 async function sendMsg() {
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if (!text) return;
+
+  // ★トークン入力（ghp_で始まる文字列）の自動検知・記憶処理
+  if (text.startsWith('ghp_')) {
+    localStorage.setItem('gh_token', text);
+    appendSystemMsg('🔑 通信キーの設定が完了しました！オフライン機能が有効です。');
+    input.value = '';
+    document.getElementById('stamp-palette').classList.add('hidden');
+    fetchOfflineMessages();
+    return;
+  }
 
   await dispatchMessage(text, false);
   input.value = '';
@@ -223,7 +233,7 @@ function toggleStampPalette() {
 async function startCall() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const call = peer.call(targetRole, stream);
+    call = peer.call(targetRole, stream);
     handleStream(call);
   } catch (err) {
     alert('マイクのアクセス許可が必要です');
@@ -253,6 +263,15 @@ function appendMessage(text, className, isStamp = false, msgId = '') {
   
   attachLongPressDelete(msg, msgId);
 
+  list.appendChild(msg);
+  list.scrollTop = list.scrollHeight;
+}
+
+function appendSystemMsg(text) {
+  const list = document.getElementById('message-list');
+  const msg = document.createElement('div');
+  msg.className = 'system-msg';
+  msg.innerText = text;
   list.appendChild(msg);
   list.scrollTop = list.scrollHeight;
 }
