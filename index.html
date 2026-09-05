@@ -22,7 +22,7 @@
         <span class="file-icon">JS</span>
         <span class="file-name">analytics_core.js</span>
       </div>
-      <button class="btn-commit" onclick="switchToSecret()">Commit Changes</button>
+      <button class="btn-commit" onclick="handleCommitClick()">Commit Changes</button>
     </header>
 
     <div class="editor-container">
@@ -47,6 +47,9 @@ export function trackUserSession(sessionId) {
   logEvent(analytics, 'session_start', { id: sessionId });
 }</textarea>
     </div>
+
+    <!-- 1回タップ時のダミー演出用トースト通知 -->
+    <div id="dummy-toast" class="dummy-toast hidden">[SUCCESS] Commit applied to main branch.</div>
   </div>
 
   <!-- ================= 2. 裏の姿：隠しメッセージ＆通話画面 ================= -->
@@ -54,7 +57,7 @@ export function trackUserSession(sessionId) {
     <header class="top-bar secret-bar">
       <div class="partner-status">
         <span class="status-dot"></span>
-        <span class="partner-name">Partner (Offline)</span>
+        <span id="role-display" class="partner-name">Me: user_a | Partner (Offline)</span>
       </div>
       <div class="header-btns">
         <button class="btn-call" onclick="startCall()">📞 通話</button>
@@ -64,7 +67,6 @@ export function trackUserSession(sessionId) {
     </header>
 
     <div class="chat-container">
-      <!-- メッセージリスト（初期状態は非表示） -->
       <div class="message-list hidden-messages" id="message-list">
         <div class="system-msg">暗号化されたP2P通信が有効です</div>
       </div>
@@ -114,7 +116,7 @@ export function trackUserSession(sessionId) {
     </div>
   </div>
 
-  <!-- タップ操作メニューシート（長押し時に発動） -->
+  <!-- タップ操作メニューシート -->
   <div id="action-sheet" class="action-sheet-backdrop hidden" onclick="closeActionSheet()">
     <div class="action-sheet-menu" onclick="event.stopPropagation()">
       <button class="as-btn" onclick="handleMenuCopy()">📋 コピー</button>
