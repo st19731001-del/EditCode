@@ -2,6 +2,7 @@
 const GITHUB_CONFIG = {
   owner: 'st19731001-del',
   repo: 'st19731001-del.github.io',
+  // ブラウザの内部領域(localStorage)からトークンを取得
   getToken: () => localStorage.getItem('gh_token') || ''
 };
 
@@ -17,8 +18,8 @@ let activeCall = null;
 
 // PeerJS イベントハンドラ
 peer.on('open', (id) => {
-  console.log('My ID:', id);
   connectToPartner();
+  fetchOfflineMessages();
 });
 
 peer.on('connection', (conn) => {
@@ -54,7 +55,6 @@ function setupConnectionEvents() {
     if (data.type === 'chat') {
       appendMessage(data.text, 'partner-msg', data.isStamp, data.id);
     } else if (data.type === 'delete') {
-      // 相手から削除通知が届いたら該当メッセージを画面から消去
       removeMessageFromDOM(data.id);
     }
   });
@@ -96,23 +96,104 @@ async function dispatchMessage(text, isStamp = false) {
   }
 }
 
+// ================= GitHub API 連携 =================
+async function saveMessageToGitHub(text, isStamp, msgId) {
+  const token = GITHUB_CONFIG.getToken();
+  if (!token) return;
+
+  const bodyData = JSON.stringify({
+    id: msgId,
+    sender: myRole,
+    target: targetRole,
+    text: text,
+    isStamp: isStamp,
+    timestamp: new Date().toISOString()
+  });
+
+  try {
+    await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        title: `MSG_${msgId}`,
+        body: bodyData,
+        labels: ['offline-msg']
+      })
+    });
+  } catch (err) {
+    console.error('GitHub保存エラー:', err);
+  }
+}
+
+async function fetchOfflineMessages() {
+  const token = GITHUB_CONFIG.getToken();
+  if (!token) return;
+
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues?labels=offline-msg`, {
+      headers: { 'Authorization': `token ${token}` }
+    });
+    const issues = await res.json();
+    
+    let count = 0;
+    if (Array.isArray(issues)) {
+      issues.forEach(issue => {
+        try {
+          const data = JSON.parse(issue.body);
+          if (data.target === myRole) {
+            appendMessage(data.text, 'partner-msg', data.isStamp, data.id);
+            count++;
+            closeGitHubIssue(issue.number, token);
+          }
+        } catch (e) {}
+      });
+    }
+
+    if (count > 0) updateBadge(count);
+  } catch (err) {
+    console.error('未読取得エラー:', err);
+  }
+}
+
+async function closeGitHubIssue(issueNumber, token) {
+  await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues/${issueNumber}`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `token ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ state: 'closed' })
+  });
+}
+
+function updateBadge(count) {
+  if ('setAppBadge' in navigator) {
+    if (count > 0) {
+      navigator.setAppBadge(count);
+    } else {
+      navigator.clearAppBadge();
+    }
+  }
+}
+
 // ================= メッセージ削除（長押し機能） =================
 function attachLongPressDelete(msgElement, msgId) {
   let timer = null;
 
-  // スマホ長押しイベント
   msgElement.addEventListener('touchstart', () => {
     timer = setTimeout(() => {
       if (confirm('このメッセージを削除（取り消し）しますか？')) {
         deleteMessage(msgElement, msgId);
       }
-    }, 500); // 0.5秒長押しで発動
+    }, 500);
   }, { passive: true });
 
   msgElement.addEventListener('touchend', () => clearTimeout(timer));
   msgElement.addEventListener('touchmove', () => clearTimeout(timer));
 
-  // PC用（右クリック削除）
   msgElement.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (confirm('このメッセージを削除（取り消し）しますか？')) {
@@ -123,7 +204,6 @@ function attachLongPressDelete(msgElement, msgId) {
 
 function deleteMessage(element, msgId) {
   element.remove();
-  // オンライン中なら相手の画面からも消去命令を送信
   if (activeConn && activeConn.open) {
     activeConn.send({ type: 'delete', id: msgId });
   }
@@ -137,22 +217,6 @@ function removeMessageFromDOM(msgId) {
 function toggleStampPalette() {
   const palette = document.getElementById('stamp-palette');
   palette.classList.toggle('hidden');
-}
-
-// GitHub APIへメッセージ保存
-async function saveMessageToGitHub(text, isStamp = false, msgId) {
-  const token = GITHUB_CONFIG.getToken();
-  if (!token) return;
-
-  const payload = {
-    id: msgId,
-    sender: myRole,
-    text: text,
-    isStamp: isStamp,
-    timestamp: new Date().toISOString(),
-    isRead: false
-  };
-  console.log('GitHub Discussionsへ保存:', payload);
 }
 
 // ================= 通話・画面制御 =================
@@ -187,7 +251,6 @@ function appendMessage(text, className, isStamp = false, msgId = '') {
   msg.innerText = text;
   if (msgId) msg.setAttribute('data-id', msgId);
   
-  // 長押し削除機能をバインド
   attachLongPressDelete(msg, msgId);
 
   list.appendChild(msg);
@@ -197,8 +260,8 @@ function appendMessage(text, className, isStamp = false, msgId = '') {
 function switchToSecret() {
   document.getElementById('editor-screen').classList.add('hidden');
   document.getElementById('secret-screen').classList.remove('hidden');
-  // 画面を開いた際、接続されていなければ再接続を試みる
   connectToPartner();
+  updateBadge(0);
 }
 
 function hideToEditor() {
