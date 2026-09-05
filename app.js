@@ -1,7 +1,7 @@
 // ================= 設定領域 =================
 const GITHUB_CONFIG = {
   owner: 'st19731001-del',
-  repo: 'st19731001-del.github.io',
+  repo: 'EditCode', // ← ここを st19731001-del.github.io から変更！
   getToken: () => {
     try {
       return localStorage.getItem('gh_token') || '';
