@@ -20,19 +20,24 @@ body, html { width: 100%; height: 100%; font-family: 'Courier New', monospace; b
 
 /* チャット画面 */
 .secret-bar { background: #111; font-family: sans-serif; }
-.partner-status { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.partner-status { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .status-dot { width: 8px; height: 8px; background: #777; border-radius: 50%; }
-.btn-call, .btn-hide { background: #333; color: white; border: none; padding: 5px 10px; border-radius: 4px; font-size: 12px; margin-left: 5px; }
+.header-btns { display: flex; gap: 4px; }
+.btn-call, .btn-show, .btn-hide { background: #333; color: white; border: none; padding: 5px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+.btn-show { background: #007acc; }
 
 .chat-container { flex: 1; display: flex; flex-direction: column; background: #0a0a0a; font-family: sans-serif; position: relative; }
-.message-list { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.message-list { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; transition: opacity 0.2s; }
+
+/* メッセージ非表示時のマスク処理 */
+.message-list.hidden-messages .msg { display: none !important; }
+
 .system-msg { text-align: center; color: #666; font-size: 11px; margin-bottom: 10px; }
 
 .msg { max-width: 80%; padding: 8px 12px; border-radius: 12px; font-size: 14px; line-height: 1.4; word-break: break-word; display: flex; align-items: flex-end; gap: 6px; }
 .my-msg { align-self: flex-end; background: #007acc; color: white; border-bottom-right-radius: 2px; flex-direction: row-reverse; }
 .partner-msg { align-self: flex-start; background: #2a2a2a; color: white; border-bottom-left-radius: 2px; }
 
-/* 引用（リプライ）ボックス */
 .reply-quote { background: rgba(0, 0, 0, 0.25); border-left: 3px solid #005999; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-bottom: 4px; color: #ccc; }
 .my-msg .reply-quote { border-left-color: #fff; }
 
@@ -55,3 +60,11 @@ body, html { width: 100%; height: 100%; font-family: 'Courier New', monospace; b
 .btn-stamp { background: transparent; border: none; font-size: 20px; cursor: pointer; padding: 0 4px; }
 .chat-input-area input { flex: 1; background: #2a2a2a; border: none; padding: 10px 14px; border-radius: 20px; color: white; outline: none; font-size: 14px; }
 .chat-input-area button:not(.btn-stamp) { background: #007acc; color: white; border: none; padding: 0 15px; height: 36px; border-radius: 18px; font-weight: bold; }
+
+/* タップ式アクションシート（長押しメニュー） */
+.action-sheet-backdrop { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: flex-end; z-index: 9999; }
+.action-sheet-menu { width: 100%; max-width: 500px; background: #1e1e1e; border-top-left-radius: 16px; border-top-right-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 -4px 20px rgba(0,0,0,0.5); }
+.as-btn { width: 100%; padding: 14px; background: #2a2a2a; border: none; border-radius: 10px; color: white; font-size: 15px; font-weight: bold; text-align: center; cursor: pointer; }
+.as-btn:active { background: #3a3a3a; }
+.as-danger { color: #ff5252; }
+.as-cancel { background: #111; color: #888; margin-top: 4px; }
