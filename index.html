@@ -15,7 +15,7 @@
 </head>
 <body>
 
-  <!-- ================= 1. 表の姿：ダミーコードエディタ ================= -->
+  <!-- ================= 1. 表の姿：本物っぽいダミーコードエディタ ================= -->
   <div id="editor-screen" class="screen">
     <header class="top-bar">
       <div class="file-info">
@@ -27,10 +27,10 @@
 
     <div class="editor-container">
       <div class="line-numbers">
-        1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15
+        1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16<br>17<br>18<br>19<br>20
       </div>
       <div class="code-area-wrapper">
-        <!-- 完全に自由に入力できるエディタ -->
+        <!-- 最初から20行程度のコードがあり、最終行に入力カーソルがある状態 -->
         <textarea class="code-area" id="code-area" spellcheck="false">// System Core Analytics Module v2.4.1
 import { initializeApp } from 'firebase/app';
 import { getAnalytics, logEvent } from 'firebase/analytics';
@@ -47,7 +47,11 @@ const analytics = getAnalytics(app);
 
 export function trackUserSession(sessionId) {
   logEvent(analytics, 'session_start', { id: sessionId });
-}</textarea>
+}
+
+// TODO: Implement custom telemetry event batching
+console.log("Analytics engine initialized successfully.");
+</textarea>
       </div>
     </div>
 
@@ -61,7 +65,6 @@ export function trackUserSession(sessionId) {
         <span class="status-dot"></span>
         <span id="role-display" class="partner-name">Me: user_a | Partner (Offline)</span>
       </div>
-      <!-- アイコンを 📞 👁️ 🔓 に統一 -->
       <div class="header-btns">
         <button class="btn-call" onclick="startCall()">📞</button>
         <button class="btn-show" onclick="toggleMessageVisibility()">👁️</button>
@@ -74,7 +77,6 @@ export function trackUserSession(sessionId) {
         <div class="system-msg">暗号化されたP2P通信が有効です</div>
       </div>
 
-      <!-- スタンプパレット -->
       <div id="stamp-palette" class="stamp-palette hidden">
         <div class="stamp-grid">
           <span onclick="sendStamp('🥹')">🥹</span>
