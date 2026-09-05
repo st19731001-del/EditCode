@@ -65,6 +65,7 @@ console.log("Analytics engine initialized.");</textarea>
       <div class="partner-status">
         <span class="status-dot"></span>
         <span id="role-display" class="partner-name">Me: user_a | Partner (Offline)</span>
+        <span id="unread-badge" class="unread-badge hidden">0</span>
       </div>
       <div class="header-btns">
         <button class="btn-call" onclick="startCall()">📞</button>
@@ -103,18 +104,18 @@ console.log("Analytics engine initialized.");</textarea>
         <button class="btn-cancel-reply" onclick="cancelReply()">✕</button>
       </div>
 
+      <!-- 入力エリア（改行対応のtextareaに変更） -->
       <div class="chat-input-area hidden-input" id="input-area">
         <button class="btn-stamp" onclick="toggleStampPalette()">😊</button>
-        <input 
-          type="text" 
+        <textarea 
           id="chat-input" 
           placeholder="メッセージを入力..."
+          rows="1"
           autocomplete="off" 
           autocorrect="off" 
           autocapitalize="off" 
           spellcheck="false"
-          data-form-type="other"
-        >
+        ></textarea>
         <button onclick="sendMsg()">送信</button>
       </div>
     </div>
