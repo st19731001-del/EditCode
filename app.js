@@ -11,7 +11,6 @@ const GITHUB_CONFIG = {
   }
 };
 
-// 役割（Role）の判定：localStorage優先 -> URLパラメータ -> デフォルト user_a
 const savedRole = localStorage.getItem('user_role');
 const urlParams = new URLSearchParams(window.location.search);
 const urlRole = urlParams.get('user') === 'b' ? 'user_b' : (urlParams.get('user') === 'a' ? 'user_a' : null);
@@ -26,7 +25,6 @@ let activeCall = null;
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
 
-// 長押し検知用タイマー
 let longPressTimer = null;
 let isLongPressTriggered = false;
 
@@ -48,13 +46,13 @@ function saveStoredMessages(messages) {
   return filtered;
 }
 
-// 起動時にリロードフラグがあれば裏画面を開く
+// 起動・再読み込み時の初期化
 window.addEventListener('DOMContentLoaded', () => {
-  if (sessionStorage.getItem('open_secret_after_reload') === 'true') {
-    sessionStorage.removeItem('open_secret_after_reload');
+  setupCommitButtonLongPress();
+  // リロード後またはフラグが立っている場合は裏画面を自動起動
+  if (sessionStorage.getItem('open_secret_screen') === 'true') {
     switchToSecret();
   }
-  setupCommitButtonLongPress();
 });
 
 peer.on('open', (id) => {
@@ -133,9 +131,9 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= Commit Changes 長押し制御（1秒長押しで隠し画面へ） =================
+// ================= Commit Changes 長押し制御（1秒押しっぱなしで画面切替） =================
 function setupCommitButtonLongPress() {
-  const btn = document.querySelector('.btn-commit');
+  const btn = document.getElementById('commit-btn');
   if (!btn) return;
 
   const startPress = (e) => {
@@ -143,7 +141,7 @@ function setupCommitButtonLongPress() {
     longPressTimer = setTimeout(() => {
       isLongPressTriggered = true;
       switchToSecret();
-    }, 1000); // 1秒長押し
+    }, 1000); // 1000ms = 1秒長押し
   };
 
   const cancelPress = (e) => {
@@ -155,8 +153,9 @@ function setupCommitButtonLongPress() {
 
   const handleClick = (e) => {
     if (e) e.preventDefault();
-    if (isLongPressTriggered) return; // 長押しで切替済みの場合はダミーを出さない
-    showDummyCommitToast();
+    if (!isLongPressTriggered) {
+      showDummyCommitToast();
+    }
   };
 
   btn.addEventListener('touchstart', startPress, { passive: true });
@@ -165,7 +164,7 @@ function setupCommitButtonLongPress() {
   btn.addEventListener('mousedown', startPress);
   btn.addEventListener('mouseup', cancelPress);
   btn.addEventListener('mouseleave', cancelPress);
-  btn.onclick = handleClick;
+  btn.addEventListener('click', handleClick);
 }
 
 function showDummyCommitToast() {
@@ -199,36 +198,36 @@ async function sendMsg() {
   const text = input.value.trim();
   if (!text) return;
 
-  // リロードコマンド（再読み込み後も裏画面を維持）
+  // リロード（再読み込み後も裏画面を維持）
   if (text.toLowerCase() === 'reload') {
-    sessionStorage.setItem('open_secret_after_reload', 'true');
+    sessionStorage.setItem('open_secret_screen', 'true');
     location.reload(true);
     return;
   }
 
-  // 役割（Role）の手動切り替えコマンド
+  // 役割手動変更
   if (text.toLowerCase() === 'set_b') {
     localStorage.setItem('user_role', 'user_b');
-    sessionStorage.setItem('open_secret_after_reload', 'true');
+    sessionStorage.setItem('open_secret_screen', 'true');
     alert('ユーザー役割を user_b に固定しました！');
     location.reload(true);
     return;
   }
   if (text.toLowerCase() === 'set_a') {
     localStorage.setItem('user_role', 'user_a');
-    sessionStorage.setItem('open_secret_after_reload', 'true');
+    sessionStorage.setItem('open_secret_screen', 'true');
     alert('ユーザー役割を user_a に固定しました！');
     location.reload(true);
     return;
   }
 
-  // トークン設定
+  // トークン保存
   if (text.startsWith('ghp_')) {
     try {
       localStorage.setItem('gh_token', text);
-      alert('🔑 通信キーを端末に保存しました！');
+      alert('🔑 通信キーを保存しました！');
     } catch(e) {
-      alert('保存エラー: プライベートブラウジングモードを解除してください');
+      alert('保存エラー: プライベートブラウジングを解除してください');
     }
     input.value = '';
     const palette = document.getElementById('stamp-palette');
@@ -556,6 +555,7 @@ function appendSystemMsg(text) {
 }
 
 function switchToSecret() {
+  sessionStorage.setItem('open_secret_screen', 'true');
   const editor = document.getElementById('editor-screen');
   const secret = document.getElementById('secret-screen');
   if (editor) editor.classList.add('hidden');
@@ -583,6 +583,7 @@ function switchToSecret() {
 }
 
 function hideToEditor() {
+  sessionStorage.removeItem('open_secret_screen');
   const secret = document.getElementById('secret-screen');
   const editor = document.getElementById('editor-screen');
   if (secret) secret.classList.add('hidden');
