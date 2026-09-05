@@ -110,22 +110,23 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= Commit Changes タップ制御 (1回＝ダミー / 3回＝画面切り替え) =================
-function handleCommitClick() {
+// ================= Commit Changes タップ制御 (1〜2回＝ダミー / 3回＝画面切り替え) =================
+function handleCommitClick(e) {
+  if (e && e.preventDefault) e.preventDefault(); // ダブルタップズーム等の誤動作防止
   commitClickCount++;
   
   if (commitClickTimer) clearTimeout(commitClickTimer);
 
   if (commitClickCount >= 3) {
-    // 3回連打で隠し画面へ
+    // 3回押されたら隠し画面へ
     commitClickCount = 0;
     switchToSecret();
   } else {
-    // 1秒間の入力待機（単発タップならダミー演出表示）
+    // 0.8秒以内の連打を許容
     commitClickTimer = setTimeout(() => {
       showDummyCommitToast();
       commitClickCount = 0;
-    }, 400);
+    }, 800);
   }
 }
 
@@ -495,7 +496,6 @@ function switchToSecret() {
   if (list) list.classList.add('hidden-messages');
   if (btn) btn.innerText = '👁️ 表示';
 
-  // 自分の役割表示を更新
   const roleDisplay = document.getElementById('role-display');
   const isOnline = activeConn && activeConn.open;
   if (roleDisplay) {
