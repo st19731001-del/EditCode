@@ -47,13 +47,21 @@ function saveStoredMessages(messages) {
 window.addEventListener('DOMContentLoaded', () => {
   setupJSIconTrigger();
 
-  // 起動時に最終行（20行目）にカーソルを合わせる
   const codeArea = document.getElementById('code-area');
   if (codeArea) {
     setTimeout(() => {
       codeArea.focus();
       codeArea.setSelectionRange(codeArea.value.length, codeArea.value.length);
     }, 100);
+  }
+
+  // textarea自動伸縮設定
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput) {
+    chatInput.addEventListener('input', () => {
+      chatInput.style.height = 'auto';
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
+    });
   }
 
   if (sessionStorage.getItem('open_secret_screen') === 'true') {
@@ -108,7 +116,7 @@ function setupConnectionEvents() {
   renderAllMessages();
 
   if (activeConn && activeConn.open) {
-    activeConn.send({ type: 'read_ack' });
+    activeConn.send({ type: 'read_ack_all' });
     markMyMessagesAsRead();
   }
 
@@ -121,12 +129,14 @@ function setupConnectionEvents() {
         sender: 'partner',
         isStamp: data.isStamp,
         isRead: true,
-        timestamp: Date.now()
+        timestamp: data.timestamp || Date.now()
       };
       saveAndRenderNewMessage(msgObj);
       activeConn.send({ type: 'read_ack', id: data.id });
     } else if (data.type === 'read_ack') {
       markMyMessagesAsRead(data.id);
+    } else if (data.type === 'read_ack_all') {
+      markMyMessagesAsRead();
     } else if (data.type === 'delete') {
       deleteLocalMessage(data.id);
     }
@@ -159,7 +169,7 @@ function showDummyCommitToast() {
   }, 1500);
 }
 
-// ================= メッセージ非表示 / 表示切替（アイコンのみ対応） =================
+// ================= メッセージ非表示 / 表示切替 =================
 function toggleMessageVisibility() {
   const list = document.getElementById('message-list');
   const inputArea = document.getElementById('input-area');
@@ -171,6 +181,12 @@ function toggleMessageVisibility() {
     list.classList.remove('hidden-messages');
     if (inputArea) inputArea.classList.remove('hidden-input');
     if (btn) btn.innerText = '🙈';
+    
+    // 表示時に既読処理を実行
+    markMyMessagesAsRead();
+    if (activeConn && activeConn.open) {
+      activeConn.send({ type: 'read_ack_all' });
+    }
   } else {
     list.classList.add('hidden-messages');
     if (inputArea) inputArea.classList.add('hidden-input');
@@ -216,6 +232,7 @@ async function sendMsg() {
       alert('保存エラー: プライベートブラウジングを解除してください');
     }
     input.value = '';
+    input.style.height = 'auto';
     const palette = document.getElementById('stamp-palette');
     if (palette) palette.classList.add('hidden');
     renderAllMessages();
@@ -225,6 +242,7 @@ async function sendMsg() {
 
   await dispatchMessage(text, false);
   input.value = '';
+  input.style.height = 'auto';
   cancelReply();
   const palette = document.getElementById('stamp-palette');
   if (palette) palette.classList.add('hidden');
@@ -240,6 +258,7 @@ async function sendStamp(emoji) {
 async function dispatchMessage(text, isStamp = false) {
   const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   const isOnline = activeConn && activeConn.open;
+  const now = Date.now();
   
   const msgObj = {
     id: msgId,
@@ -248,7 +267,7 @@ async function dispatchMessage(text, isStamp = false) {
     sender: 'me',
     isStamp: isStamp,
     isRead: isOnline,
-    timestamp: Date.now()
+    timestamp: now
   };
 
   saveAndRenderNewMessage(msgObj);
@@ -259,11 +278,48 @@ async function dispatchMessage(text, isStamp = false) {
       text: text, 
       replyText: msgObj.replyText, 
       isStamp: isStamp, 
-      id: msgId 
+      id: msgId,
+      timestamp: now
     });
   } else {
-    await saveMessageToGitHub(text, isStamp, msgId, msgObj.replyText);
+    await saveMessageToGitHub(text, isStamp, msgId, msgObj.replyText, now);
   }
+}
+
+// 日時フォーマット関数 (例: 14:25 / 9/6 14:25)
+function formatTime(timestamp) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  const now = new Date();
+  
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const timeStr = `${hours}:${minutes}`;
+
+  const isToday = date.toDateString() === now.toDateString();
+  if (isToday) {
+    return timeStr;
+  } else {
+    return `${date.getMonth() + 1}/${date.getDate()} ${timeStr}`;
+  }
+}
+
+// 未読丸数字バッジの更新
+function updateUnreadBadgeCount() {
+  const messages = getStoredMessages();
+  const unreadCount = messages.filter(m => m.sender === 'partner' && !m.isRead).length;
+  
+  const badgeElem = document.getElementById('unread-badge');
+  if (badgeElem) {
+    if (unreadCount > 0) {
+      badgeElem.innerText = unreadCount;
+      badgeElem.classList.remove('hidden');
+    } else {
+      badgeElem.classList.add('hidden');
+    }
+  }
+
+  updateBadge(unreadCount);
 }
 
 // ================= タップ操作メニューシート =================
@@ -338,6 +394,7 @@ function renderAllMessages() {
 
   const messages = saveStoredMessages(getStoredMessages());
   messages.forEach(m => renderSingleMessage(m));
+  updateUnreadBadgeCount();
 }
 
 function saveAndRenderNewMessage(msgObj) {
@@ -347,6 +404,7 @@ function saveAndRenderNewMessage(msgObj) {
     saveStoredMessages(messages);
   }
   renderSingleMessage(msgObj);
+  updateUnreadBadgeCount();
 }
 
 function renderSingleMessage(m) {
@@ -365,15 +423,25 @@ function renderSingleMessage(m) {
   if (m.replyText) {
     html += `<div class="reply-quote">↩ ${m.replyText}</div>`;
   }
-  html += `<span class="msg-text">${m.text}</span>`;
+  html += `<span class="msg-text">${escapeHtml(m.text)}</span>`;
+  
+  // 送信日時および既読ステータス表示
+  html += `<div class="msg-meta">`;
   if (m.sender === 'me') {
-    html += `<span class="read-status">${m.isRead ? '既読' : '未読'}</span>`;
+    html += `<span class="read-status-text">${m.isRead ? '既読' : '未読'}</span>`;
   }
+  html += `<span class="msg-time">${formatTime(m.timestamp)}</span>`;
+  html += `</div>`;
+
   msgContainer.innerHTML = html;
 
   attachLongPressMenu(msgContainer, m.text, m.id);
   list.appendChild(msgContainer);
   list.scrollTop = list.scrollHeight;
+}
+
+function escapeHtml(str) {
+  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
 function markMyMessagesAsRead(targetId = null) {
@@ -392,8 +460,12 @@ function markMyMessagesAsRead(targetId = null) {
 
   if (updated) {
     saveStoredMessages(messages);
-    renderAllMessages();
+    // 画面上の既読表記をリアルタイム書き換え
+    document.querySelectorAll('.my-msg .read-status-text').forEach(elem => {
+      elem.innerText = '既読';
+    });
   }
+  updateUnreadBadgeCount();
 }
 
 function deleteLocalMessage(msgId) {
@@ -402,6 +474,7 @@ function deleteLocalMessage(msgId) {
   saveStoredMessages(messages);
   const elem = document.querySelector(`[data-id="${msgId}"]`);
   if (elem) elem.remove();
+  updateUnreadBadgeCount();
 }
 
 function deleteMessage(msgId) {
@@ -412,7 +485,7 @@ function deleteMessage(msgId) {
 }
 
 // ================= GitHub API 連携 =================
-async function saveMessageToGitHub(text, isStamp, msgId, replyText = null) {
+async function saveMessageToGitHub(text, isStamp, msgId, replyText = null, timestamp = Date.now()) {
   const token = GITHUB_CONFIG.getToken();
   if (!token) return;
 
@@ -423,7 +496,7 @@ async function saveMessageToGitHub(text, isStamp, msgId, replyText = null) {
     text: text,
     replyText: replyText,
     isStamp: isStamp,
-    timestamp: new Date().toISOString()
+    timestamp: timestamp
   });
 
   try {
@@ -466,8 +539,8 @@ async function fetchOfflineMessages() {
               replyText: data.replyText || null,
               sender: 'partner',
               isStamp: data.isStamp,
-              isRead: true,
-              timestamp: Date.now()
+              isRead: false,
+              timestamp: data.timestamp || Date.now()
             };
             saveAndRenderNewMessage(msgObj);
             count++;
@@ -477,7 +550,7 @@ async function fetchOfflineMessages() {
       });
     }
 
-    if (count > 0) updateBadge(count);
+    updateUnreadBadgeCount();
   } catch (err) {
     console.error('未読取得エラー:', err);
   }
@@ -571,8 +644,6 @@ function switchToSecret() {
   if (GITHUB_CONFIG.getToken()) {
     fetchOfflineMessages();
   }
-  
-  updateBadge(0);
 }
 
 function hideToEditor() {
