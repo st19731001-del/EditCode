@@ -102,18 +102,23 @@ function setupConnectionEvents() {
     markMyMessagesAsRead();
   }
 
+  // データ受信時の強固な描画処理
   activeConn.on('data', (data) => {
     if (data.type === 'chat') {
       const msgObj = {
         id: data.id,
         text: data.text,
         replyText: data.replyText || null,
-        sender: 'partner',
+        sender: 'partner', // 受信メッセージは強制的に相手（partner）として処理
         isStamp: data.isStamp,
         isRead: true,
         timestamp: Date.now()
       };
+      
+      // 保存＆描画を実行
       saveAndRenderNewMessage(msgObj);
+      
+      // 既読通知を相手に返送
       activeConn.send({ type: 'read_ack', id: data.id });
     } else if (data.type === 'read_ack') {
       markMyMessagesAsRead(data.id);
@@ -129,14 +134,14 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= 青い「JS」アイコン【1回タップ】で隠し画面起動 =================
+// ================= 青い「JS」アイコン 1回タップで隠し画面起動 =================
 function setupJSIconTrigger() {
   const icon = document.getElementById('js-icon-trigger');
   if (!icon) return;
 
   icon.addEventListener('click', (e) => {
     e.preventDefault();
-    switchToSecret(); // 1回タップでそのまま隠し画面へ
+    switchToSecret();
   });
 }
 
@@ -149,7 +154,7 @@ function showDummyCommitToast() {
   }, 1500);
 }
 
-// ================= メッセージ非表示 / 表示切替（入力欄も連動） =================
+// ================= メッセージ非表示 / 表示切替 =================
 function toggleMessageVisibility() {
   const list = document.getElementById('message-list');
   const inputArea = document.getElementById('input-area');
@@ -158,12 +163,10 @@ function toggleMessageVisibility() {
   if (!list) return;
 
   if (list.classList.contains('hidden-messages')) {
-    // 表示状態へ切り替え
     list.classList.remove('hidden-messages');
     if (inputArea) inputArea.classList.remove('hidden-input');
     if (btn) btn.innerText = '🙈 非表示';
   } else {
-    // 非表示状態へ切り替え（入力欄も隠す）
     list.classList.add('hidden-messages');
     if (inputArea) inputArea.classList.add('hidden-input');
     if (btn) btn.innerText = '👁️ 表示';
@@ -334,14 +337,20 @@ function renderAllMessages() {
 
 function saveAndRenderNewMessage(msgObj) {
   const messages = getStoredMessages();
-  messages.push(msgObj);
-  saveStoredMessages(messages);
+  // 重複追加防止チェック
+  if (!messages.some(m => m.id === msgObj.id)) {
+    messages.push(msgObj);
+    saveStoredMessages(messages);
+  }
   renderSingleMessage(msgObj);
 }
 
 function renderSingleMessage(m) {
   const list = document.getElementById('message-list');
   if (!list) return;
+
+  // 既に描画済みならスキップ
+  if (document.querySelector(`[data-id="${m.id}"]`)) return;
 
   const msgContainer = document.createElement('div');
   const className = m.sender === 'me' ? 'my-msg' : 'partner-msg';
@@ -501,7 +510,7 @@ function toggleStampPalette() {
 async function startCall() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    call = peer.call(targetRole, stream);
+    const call = peer.call(targetRole, stream);
     handleStream(call);
   } catch (err) {
     alert('マイクのアクセス許可が必要です');
@@ -543,7 +552,6 @@ function switchToSecret() {
   const inputArea = document.getElementById('input-area');
   const btn = document.querySelector('.btn-show');
   
-  // 初期状態は非表示（メッセージも入力欄も隠す）
   if (list) list.classList.add('hidden-messages');
   if (inputArea) inputArea.classList.add('hidden-input');
   if (btn) btn.innerText = '👁️ 表示';
