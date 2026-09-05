@@ -14,10 +14,18 @@ let activeConn = null;
 let activeCall = null;
 
 let currentReplyTo = null;
-let selectedMsgTarget = { text: '', id: '' }; // 長押しで選択されたメッセージ
+let selectedMsgTarget = { text: '', id: '' };
+
+// コミットボタン連打検知用
+let commitClickCount = 0;
+let commitClickTimer = null;
 
 function getStoredMessages() {
-  return JSON.parse(localStorage.getItem('chat_history') || '[]');
+  try {
+    return JSON.parse(localStorage.getItem('chat_history') || '[]');
+  } catch (e) {
+    return [];
+  }
 }
 
 function saveStoredMessages(messages) {
@@ -40,27 +48,35 @@ peer.on('connection', (conn) => {
 
 peer.on('call', async (call) => {
   if (confirm('通話の着信があります。応答しますか？')) {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    call.answer(stream);
-    handleStream(call);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      call.answer(stream);
+      handleStream(call);
+    } catch (e) {
+      alert('マイクのアクセス許可が必要です');
+    }
   }
 });
 
 function connectToPartner() {
   if (activeConn && activeConn.open) return;
-  const conn = peer.connect(targetRole, { reliable: true });
-  conn.on('open', () => {
-    activeConn = conn;
-    setupConnectionEvents();
-  });
+  try {
+    const conn = peer.connect(targetRole);
+    conn.on('open', () => {
+      activeConn = conn;
+      setupConnectionEvents();
+    });
+  } catch (e) {
+    console.error('Connection error:', e);
+  }
 }
 
 function setupConnectionEvents() {
   const statusDot = document.querySelector('.status-dot');
-  const partnerName = document.querySelector('.partner-name');
+  const roleDisplay = document.getElementById('role-display');
   
   if (statusDot) statusDot.style.background = '#4caf50';
-  if (partnerName) partnerName.innerText = 'Partner (Online)';
+  if (roleDisplay) roleDisplay.innerText = `Me: ${myRole} | Partner (Online)`;
 
   if (activeConn && activeConn.open) {
     activeConn.send({ type: 'read_ack' });
@@ -89,9 +105,37 @@ function setupConnectionEvents() {
 
   activeConn.on('close', () => {
     if (statusDot) statusDot.style.background = '#777';
-    if (partnerName) partnerName.innerText = 'Partner (Offline)';
+    if (roleDisplay) roleDisplay.innerText = `Me: ${myRole} | Partner (Offline)`;
     activeConn = null;
   });
+}
+
+// ================= Commit Changes タップ制御 (1回＝ダミー / 3回＝画面切り替え) =================
+function handleCommitClick() {
+  commitClickCount++;
+  
+  if (commitClickTimer) clearTimeout(commitClickTimer);
+
+  if (commitClickCount >= 3) {
+    // 3回連打で隠し画面へ
+    commitClickCount = 0;
+    switchToSecret();
+  } else {
+    // 1秒間の入力待機（単発タップならダミー演出表示）
+    commitClickTimer = setTimeout(() => {
+      showDummyCommitToast();
+      commitClickCount = 0;
+    }, 400);
+  }
+}
+
+function showDummyCommitToast() {
+  const toast = document.getElementById('dummy-toast');
+  if (!toast) return;
+  toast.classList.remove('hidden');
+  setTimeout(() => {
+    toast.classList.add('hidden');
+  }, 1500);
 }
 
 // ================= メッセージ非表示 / 表示切替 =================
@@ -99,18 +143,20 @@ function toggleMessageVisibility() {
   const list = document.getElementById('message-list');
   const btn = document.querySelector('.btn-show');
   
+  if (!list) return;
   if (list.classList.contains('hidden-messages')) {
     list.classList.remove('hidden-messages');
-    btn.innerText = '🙈 非表示';
+    if (btn) btn.innerText = '🙈 非表示';
   } else {
     list.classList.add('hidden-messages');
-    btn.innerText = '👁️ 表示';
+    if (btn) btn.innerText = '👁️ 表示';
   }
 }
 
 // ================= メッセージ送信 =================
 async function sendMsg() {
   const input = document.getElementById('chat-input');
+  if (!input) return;
   const text = input.value.trim();
   if (!text) return;
 
@@ -123,7 +169,8 @@ async function sendMsg() {
     localStorage.setItem('gh_token', text);
     appendSystemMsg('🔑 通信キーの設定が完了しました！オフライン機能が有効です。');
     input.value = '';
-    document.getElementById('stamp-palette').classList.add('hidden');
+    const palette = document.getElementById('stamp-palette');
+    if (palette) palette.classList.add('hidden');
     fetchOfflineMessages();
     return;
   }
@@ -131,13 +178,15 @@ async function sendMsg() {
   await dispatchMessage(text, false);
   input.value = '';
   cancelReply();
-  document.getElementById('stamp-palette').classList.add('hidden');
+  const palette = document.getElementById('stamp-palette');
+  if (palette) palette.classList.add('hidden');
 }
 
 async function sendStamp(emoji) {
   await dispatchMessage(emoji, true);
   cancelReply();
-  document.getElementById('stamp-palette').classList.add('hidden');
+  const palette = document.getElementById('stamp-palette');
+  if (palette) palette.classList.add('hidden');
 }
 
 async function dispatchMessage(text, isStamp = false) {
@@ -175,7 +224,8 @@ function attachLongPressMenu(msgElement, msgText, msgId) {
 
   const openSheet = () => {
     selectedMsgTarget = { text: msgText, id: msgId };
-    document.getElementById('action-sheet').classList.remove('hidden');
+    const sheet = document.getElementById('action-sheet');
+    if (sheet) sheet.classList.remove('hidden');
   };
 
   msgElement.addEventListener('touchstart', () => {
@@ -192,18 +242,23 @@ function attachLongPressMenu(msgElement, msgText, msgId) {
 }
 
 function closeActionSheet() {
-  document.getElementById('action-sheet').classList.add('hidden');
+  const sheet = document.getElementById('action-sheet');
+  if (sheet) sheet.classList.add('hidden');
 }
 
 function handleMenuCopy() {
-  navigator.clipboard.writeText(selectedMsgTarget.text);
+  if (selectedMsgTarget.text) {
+    navigator.clipboard.writeText(selectedMsgTarget.text);
+  }
   closeActionSheet();
 }
 
 function handleMenuReply() {
   currentReplyTo = { text: selectedMsgTarget.text };
-  document.getElementById('reply-text').innerText = selectedMsgTarget.text;
-  document.getElementById('reply-preview').classList.remove('hidden');
+  const replyTextElem = document.getElementById('reply-text');
+  if (replyTextElem) replyTextElem.innerText = selectedMsgTarget.text;
+  const preview = document.getElementById('reply-preview');
+  if (preview) preview.classList.remove('hidden');
   closeActionSheet();
 }
 
@@ -216,12 +271,14 @@ function handleMenuDelete() {
 
 function cancelReply() {
   currentReplyTo = null;
-  document.getElementById('reply-preview').classList.add('hidden');
+  const preview = document.getElementById('reply-preview');
+  if (preview) preview.classList.add('hidden');
 }
 
 // ================= 画面描画 =================
 function renderAllMessages() {
   const list = document.getElementById('message-list');
+  if (!list) return;
   list.innerHTML = '<div class="system-msg">暗号化されたP2P通信が有効です</div>';
   const messages = saveStoredMessages(getStoredMessages());
   messages.forEach(m => renderSingleMessage(m));
@@ -236,6 +293,8 @@ function saveAndRenderNewMessage(msgObj) {
 
 function renderSingleMessage(m) {
   const list = document.getElementById('message-list');
+  if (!list) return;
+
   const msgContainer = document.createElement('div');
   const className = m.sender === 'me' ? 'my-msg' : 'partner-msg';
   
@@ -387,7 +446,7 @@ function updateBadge(count) {
 
 function toggleStampPalette() {
   const palette = document.getElementById('stamp-palette');
-  palette.classList.toggle('hidden');
+  if (palette) palette.classList.toggle('hidden');
 }
 
 // ================= 通話・画面制御 =================
@@ -417,6 +476,7 @@ function handleStream(call) {
 
 function appendSystemMsg(text) {
   const list = document.getElementById('message-list');
+  if (!list) return;
   const msg = document.createElement('div');
   msg.className = 'system-msg';
   msg.innerText = text;
@@ -425,14 +485,22 @@ function appendSystemMsg(text) {
 }
 
 function switchToSecret() {
-  document.getElementById('editor-screen').classList.add('hidden');
-  document.getElementById('secret-screen').classList.remove('hidden');
+  const editor = document.getElementById('editor-screen');
+  const secret = document.getElementById('secret-screen');
+  if (editor) editor.classList.add('hidden');
+  if (secret) secret.classList.remove('hidden');
   
-  // チャット画面遷移時は初期状態を「非表示」にする
   const list = document.getElementById('message-list');
   const btn = document.querySelector('.btn-show');
-  list.classList.add('hidden-messages');
+  if (list) list.classList.add('hidden-messages');
   if (btn) btn.innerText = '👁️ 表示';
+
+  // 自分の役割表示を更新
+  const roleDisplay = document.getElementById('role-display');
+  const isOnline = activeConn && activeConn.open;
+  if (roleDisplay) {
+    roleDisplay.innerText = `Me: ${myRole} | Partner (${isOnline ? 'Online' : 'Offline'})`;
+  }
 
   renderAllMessages();
   connectToPartner();
@@ -440,9 +508,13 @@ function switchToSecret() {
 }
 
 function hideToEditor() {
-  document.getElementById('secret-screen').classList.add('hidden');
-  document.getElementById('editor-screen').classList.remove('hidden');
-  document.getElementById('stamp-palette').classList.add('hidden');
+  const secret = document.getElementById('secret-screen');
+  const editor = document.getElementById('editor-screen');
+  if (secret) secret.classList.add('hidden');
+  if (editor) editor.classList.remove('hidden');
+  
+  const palette = document.getElementById('stamp-palette');
+  if (palette) palette.classList.add('hidden');
   cancelReply();
 }
 
