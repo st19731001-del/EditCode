@@ -5,17 +5,28 @@ const GITHUB_CONFIG = {
   getToken: () => localStorage.getItem('gh_token') || ''
 };
 
-// 2人の固定ID設定 (?user=b でアクセスするとuser_bになります)
 const urlParams = new URLSearchParams(window.location.search);
 const myRole = urlParams.get('user') === 'b' ? 'user_b' : 'user_a';
 const targetRole = myRole === 'user_a' ? 'user_b' : 'user_a';
 
-// PeerJSの初期化
 const peer = new Peer(myRole);
 let activeConn = null;
 let activeCall = null;
+let currentReplyTo = null; // 現在リプライ対象のメッセージ
 
-// PeerJS イベントハンドラ
+// ローカルストレージ管理
+function getStoredMessages() {
+  return JSON.parse(localStorage.getItem('chat_history') || '[]');
+}
+
+function saveStoredMessages(messages) {
+  const now = Date.now();
+  const threeDays = 3 * 24 * 60 * 60 * 1000;
+  const filtered = messages.filter(m => (now - m.timestamp) < threeDays);
+  localStorage.setItem('chat_history', JSON.stringify(filtered));
+  return filtered;
+}
+
 peer.on('open', (id) => {
   connectToPartner();
   fetchOfflineMessages();
@@ -50,11 +61,28 @@ function setupConnectionEvents() {
   if (statusDot) statusDot.style.background = '#4caf50';
   if (partnerName) partnerName.innerText = 'Partner (Online)';
 
+  if (activeConn && activeConn.open) {
+    activeConn.send({ type: 'read_ack' });
+    markMyMessagesAsRead();
+  }
+
   activeConn.on('data', (data) => {
     if (data.type === 'chat') {
-      appendMessage(data.text, 'partner-msg', data.isStamp, data.id);
+      const msgObj = {
+        id: data.id,
+        text: data.text,
+        replyText: data.replyText || null,
+        sender: 'partner',
+        isStamp: data.isStamp,
+        isRead: true,
+        timestamp: Date.now()
+      };
+      saveAndRenderNewMessage(msgObj);
+      activeConn.send({ type: 'read_ack', id: data.id });
+    } else if (data.type === 'read_ack') {
+      markMyMessagesAsRead(data.id);
     } else if (data.type === 'delete') {
-      removeMessageFromDOM(data.id);
+      deleteLocalMessage(data.id);
     }
   });
 
@@ -65,19 +93,17 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= メッセージ送信 (特殊コマンド＆トークン自動登録対応) =================
+// ================= メッセージ送信 =================
 async function sendMsg() {
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if (!text) return;
 
-  // 1. 強制再読み込みコマンド
   if (text.toLowerCase() === 'reload') {
     location.reload(true);
     return;
   }
 
-  // 2. トークン入力（ghp_で始まる文字列）の自動検知・記憶処理
   if (text.startsWith('ghp_')) {
     localStorage.setItem('gh_token', text);
     appendSystemMsg('🔑 通信キーの設定が完了しました！オフライン機能が有効です。');
@@ -89,30 +115,163 @@ async function sendMsg() {
 
   await dispatchMessage(text, false);
   input.value = '';
+  cancelReply();
   document.getElementById('stamp-palette').classList.add('hidden');
 }
 
 async function sendStamp(emoji) {
   await dispatchMessage(emoji, true);
+  cancelReply();
   document.getElementById('stamp-palette').classList.add('hidden');
 }
 
 async function dispatchMessage(text, isStamp = false) {
   const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  const isOnline = activeConn && activeConn.open;
   
-  if (activeConn && activeConn.open) {
-    activeConn.send({ type: 'chat', text: text, isStamp: isStamp, id: msgId });
-    appendMessage(text, 'my-msg', isStamp, msgId);
+  const msgObj = {
+    id: msgId,
+    text: text,
+    replyText: currentReplyTo ? currentReplyTo.text : null,
+    sender: 'me',
+    isStamp: isStamp,
+    isRead: isOnline,
+    timestamp: Date.now()
+  };
+
+  saveAndRenderNewMessage(msgObj);
+
+  if (isOnline) {
+    activeConn.send({ 
+      type: 'chat', 
+      text: text, 
+      replyText: msgObj.replyText, 
+      isStamp: isStamp, 
+      id: msgId 
+    });
   } else {
-    appendMessage(text, 'my-msg pending', isStamp, msgId);
-    await saveMessageToGitHub(text, isStamp, msgId);
-    const pendingMsg = document.querySelector('.pending');
-    if (pendingMsg) pendingMsg.classList.remove('pending');
+    await saveMessageToGitHub(text, isStamp, msgId, msgObj.replyText);
+  }
+}
+
+// ================= リプライ操作 =================
+function setReplyTarget(text) {
+  currentReplyTo = { text: text };
+  document.getElementById('reply-text').innerText = text;
+  document.getElementById('reply-preview').classList.remove('hidden');
+}
+
+function cancelReply() {
+  currentReplyTo = null;
+  document.getElementById('reply-preview').classList.add('hidden');
+}
+
+// ================= 長押しメニュー (コピー / リプライ / 削除) =================
+function attachLongPressMenu(msgElement, msgText, msgId) {
+  let timer = null;
+
+  const showMenu = () => {
+    const choice = prompt("操作を選択してください:\n1: 📋 コピー\n2: 💬 リプライ（返信）\n3: 🗑️ 削除（取り消し）\n\n(数字 1〜3 を入力)", "1");
+    if (choice === "1") {
+      navigator.clipboard.writeText(msgText);
+      alert("コピーしました！");
+    } else if (choice === "2") {
+      setReplyTarget(msgText);
+    } else if (choice === "3") {
+      if (confirm("このメッセージを削除しますか？")) {
+        deleteMessage(msgId);
+      }
+    }
+  };
+
+  msgElement.addEventListener('touchstart', () => {
+    timer = setTimeout(showMenu, 500);
+  }, { passive: true });
+
+  msgElement.addEventListener('touchend', () => clearTimeout(timer));
+  msgElement.addEventListener('touchmove', () => clearTimeout(timer));
+
+  msgElement.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    showMenu();
+  });
+}
+
+// ================= 画面描画 =================
+function renderAllMessages() {
+  const list = document.getElementById('message-list');
+  list.innerHTML = '<div class="system-msg">暗号化されたP2P通信が有効です</div>';
+  const messages = saveStoredMessages(getStoredMessages());
+  messages.forEach(m => renderSingleMessage(m));
+}
+
+function saveAndRenderNewMessage(msgObj) {
+  const messages = getStoredMessages();
+  messages.push(msgObj);
+  saveStoredMessages(messages);
+  renderSingleMessage(msgObj);
+}
+
+function renderSingleMessage(m) {
+  const list = document.getElementById('message-list');
+  const msgContainer = document.createElement('div');
+  const className = m.sender === 'me' ? 'my-msg' : 'partner-msg';
+  
+  msgContainer.className = `msg ${className} ${m.isStamp ? 'stamp-msg' : ''}`;
+  msgContainer.setAttribute('data-id', m.id);
+
+  let html = '';
+  if (m.replyText) {
+    html += `<div class="reply-quote">↩ ${m.replyText}</div>`;
+  }
+  html += `<span class="msg-text">${m.text}</span>`;
+  if (m.sender === 'me') {
+    html += `<span class="read-status">${m.isRead ? '既読' : '未読'}</span>`;
+  }
+  msgContainer.innerHTML = html;
+
+  attachLongPressMenu(msgContainer, m.text, m.id);
+  list.appendChild(msgContainer);
+  list.scrollTop = list.scrollHeight;
+}
+
+function markMyMessagesAsRead(targetId = null) {
+  let messages = getStoredMessages();
+  let updated = false;
+
+  messages = messages.map(m => {
+    if (m.sender === 'me' && (!targetId || m.id === targetId)) {
+      if (!m.isRead) {
+        m.isRead = true;
+        updated = true;
+      }
+    }
+    return m;
+  });
+
+  if (updated) {
+    saveStoredMessages(messages);
+    renderAllMessages();
+  }
+}
+
+function deleteLocalMessage(msgId) {
+  let messages = getStoredMessages();
+  messages = messages.filter(m => m.id !== msgId);
+  saveStoredMessages(messages);
+  const elem = document.querySelector(`[data-id="${msgId}"]`);
+  if (elem) elem.remove();
+}
+
+function deleteMessage(msgId) {
+  deleteLocalMessage(msgId);
+  if (activeConn && activeConn.open) {
+    activeConn.send({ type: 'delete', id: msgId });
   }
 }
 
 // ================= GitHub API 連携 =================
-async function saveMessageToGitHub(text, isStamp, msgId) {
+async function saveMessageToGitHub(text, isStamp, msgId, replyText = null) {
   const token = GITHUB_CONFIG.getToken();
   if (!token) return;
 
@@ -121,6 +280,7 @@ async function saveMessageToGitHub(text, isStamp, msgId) {
     sender: myRole,
     target: targetRole,
     text: text,
+    replyText: replyText,
     isStamp: isStamp,
     timestamp: new Date().toISOString()
   });
@@ -159,7 +319,16 @@ async function fetchOfflineMessages() {
         try {
           const data = JSON.parse(issue.body);
           if (data.target === myRole) {
-            appendMessage(data.text, 'partner-msg', data.isStamp, data.id);
+            const msgObj = {
+              id: data.id,
+              text: data.text,
+              replyText: data.replyText || null,
+              sender: 'partner',
+              isStamp: data.isStamp,
+              isRead: true,
+              timestamp: Date.now()
+            };
+            saveAndRenderNewMessage(msgObj);
             count++;
             closeGitHubIssue(issue.number, token);
           }
@@ -194,41 +363,6 @@ function updateBadge(count) {
   }
 }
 
-// ================= メッセージ削除（長押し機能） =================
-function attachLongPressDelete(msgElement, msgId) {
-  let timer = null;
-
-  msgElement.addEventListener('touchstart', () => {
-    timer = setTimeout(() => {
-      if (confirm('このメッセージを削除（取り消し）しますか？')) {
-        deleteMessage(msgElement, msgId);
-      }
-    }, 500);
-  }, { passive: true });
-
-  msgElement.addEventListener('touchend', () => clearTimeout(timer));
-  msgElement.addEventListener('touchmove', () => clearTimeout(timer));
-
-  msgElement.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    if (confirm('このメッセージを削除（取り消し）しますか？')) {
-      deleteMessage(msgElement, msgId);
-    }
-  });
-}
-
-function deleteMessage(element, msgId) {
-  element.remove();
-  if (activeConn && activeConn.open) {
-    activeConn.send({ type: 'delete', id: msgId });
-  }
-}
-
-function removeMessageFromDOM(msgId) {
-  const target = document.querySelector(`[data-id="${msgId}"]`);
-  if (target) target.remove();
-}
-
 function toggleStampPalette() {
   const palette = document.getElementById('stamp-palette');
   palette.classList.toggle('hidden');
@@ -259,19 +393,6 @@ function handleStream(call) {
   });
 }
 
-function appendMessage(text, className, isStamp = false, msgId = '') {
-  const list = document.getElementById('message-list');
-  const msg = document.createElement('div');
-  msg.className = `msg ${className} ${isStamp ? 'stamp-msg' : ''}`;
-  msg.innerText = text;
-  if (msgId) msg.setAttribute('data-id', msgId);
-  
-  attachLongPressDelete(msg, msgId);
-
-  list.appendChild(msg);
-  list.scrollTop = list.scrollHeight;
-}
-
 function appendSystemMsg(text) {
   const list = document.getElementById('message-list');
   const msg = document.createElement('div');
@@ -284,6 +405,7 @@ function appendSystemMsg(text) {
 function switchToSecret() {
   document.getElementById('editor-screen').classList.add('hidden');
   document.getElementById('secret-screen').classList.remove('hidden');
+  renderAllMessages();
   connectToPartner();
   updateBadge(0);
 }
@@ -292,9 +414,9 @@ function hideToEditor() {
   document.getElementById('secret-screen').classList.add('hidden');
   document.getElementById('editor-screen').classList.remove('hidden');
   document.getElementById('stamp-palette').classList.add('hidden');
+  cancelReply();
 }
 
-// 傾きセンサー
 if (window.DeviceOrientationEvent) {
   window.addEventListener('deviceorientation', (event) => {
     if (event.beta < -150 || event.beta > 150) {
