@@ -46,11 +46,13 @@ function saveStoredMessages(messages) {
 // 初期化処理
 window.addEventListener('DOMContentLoaded', () => {
   setupJSIconTrigger();
-  // 起動時に最終行へカーソルを合わせる
+  
+  // エディタ初期表示時に末尾にフォーカスを当てる
   const codeArea = document.getElementById('code-area');
   if (codeArea) {
-    codeArea.focus();
-    codeArea.setSelectionRange(codeArea.value.length, codeArea.value.length);
+    codeArea.addEventListener('click', () => {
+      codeArea.focus();
+    });
   }
 
   if (sessionStorage.getItem('open_secret_screen') === 'true') {
@@ -167,11 +169,11 @@ function toggleMessageVisibility() {
   if (list.classList.contains('hidden-messages')) {
     list.classList.remove('hidden-messages');
     if (inputArea) inputArea.classList.remove('hidden-input');
-    if (btn) btn.innerText = '🙈'; // アイコンのみに変更
+    if (btn) btn.innerText = '🙈'; // アイコンのみ
   } else {
     list.classList.add('hidden-messages');
     if (inputArea) inputArea.classList.add('hidden-input');
-    if (btn) btn.innerText = '👁️'; // アイコンのみに変更
+    if (btn) btn.innerText = '👁️'; // アイコンのみ
     const palette = document.getElementById('stamp-palette');
     if (palette) palette.classList.add('hidden');
   }
@@ -509,7 +511,7 @@ function toggleStampPalette() {
 // ================= 通話・画面制御 =================
 async function startCall() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: title => true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const call = peer.call(targetRole, stream);
     handleStream(call);
   } catch (err) {
@@ -554,7 +556,7 @@ function switchToSecret() {
   
   if (list) list.classList.add('hidden-messages');
   if (inputArea) inputArea.classList.add('hidden-input');
-  if (btn) btn.innerText = '👁️'; // アイコンのみ
+  if (btn) btn.innerText = '👁️';
 
   const roleDisplay = document.getElementById('role-display');
   const isOnline = activeConn && activeConn.open;
