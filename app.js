@@ -40,9 +40,13 @@ function saveStoredMessages(messages) {
   return filtered;
 }
 
+// アプリ起動時の初期化
 peer.on('open', (id) => {
   connectToPartner();
-  fetchOfflineMessages();
+  // トークンが保存されていれば自動でオフラインメッセージを取得
+  if (GITHUB_CONFIG.getToken()) {
+    fetchOfflineMessages();
+  }
 });
 
 peer.on('connection', (conn) => {
@@ -299,6 +303,12 @@ function renderAllMessages() {
   const list = document.getElementById('message-list');
   if (!list) return;
   list.innerHTML = '<div class="system-msg">暗号化されたP2P通信が有効です</div>';
+  
+  // 保存済みトークンがある場合はシステムメッセージを表示
+  if (GITHUB_CONFIG.getToken()) {
+    appendSystemMsg('🔑 通信キー（設定済み）');
+  }
+
   const messages = saveStoredMessages(getStoredMessages());
   messages.forEach(m => renderSingleMessage(m));
 }
@@ -522,6 +532,12 @@ function switchToSecret() {
 
   renderAllMessages();
   connectToPartner();
+  
+  // トークンが保存されていれば開いた時に未読取得
+  if (GITHUB_CONFIG.getToken()) {
+    fetchOfflineMessages();
+  }
+  
   updateBadge(0);
 }
 
