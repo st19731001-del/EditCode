@@ -5,8 +5,12 @@ const GITHUB_CONFIG = {
   getToken: () => localStorage.getItem('gh_token') || ''
 };
 
+// 役割（Role）の判定：localStorage優先 -> URLパラメータ -> デフォルト user_a
+const savedRole = localStorage.getItem('user_role');
 const urlParams = new URLSearchParams(window.location.search);
-const myRole = urlParams.get('user') === 'b' ? 'user_b' : 'user_a';
+const urlRole = urlParams.get('user') === 'b' ? 'user_b' : (urlParams.get('user') === 'a' ? 'user_a' : null);
+
+const myRole = savedRole || urlRole || 'user_a';
 const targetRole = myRole === 'user_a' ? 'user_b' : 'user_a';
 
 const peer = new Peer(myRole);
@@ -110,19 +114,17 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= Commit Changes タップ制御 (1〜2回＝ダミー / 3回＝画面切り替え) =================
+// ================= Commit Changes タップ制御 =================
 function handleCommitClick(e) {
-  if (e && e.preventDefault) e.preventDefault(); // ダブルタップズーム等の誤動作防止
+  if (e && e.preventDefault) e.preventDefault();
   commitClickCount++;
   
   if (commitClickTimer) clearTimeout(commitClickTimer);
 
   if (commitClickCount >= 3) {
-    // 3回押されたら隠し画面へ
     commitClickCount = 0;
     switchToSecret();
   } else {
-    // 0.8秒以内の連打を許容
     commitClickTimer = setTimeout(() => {
       showDummyCommitToast();
       commitClickCount = 0;
@@ -161,11 +163,27 @@ async function sendMsg() {
   const text = input.value.trim();
   if (!text) return;
 
+  // 画面再読み込みコマンド
   if (text.toLowerCase() === 'reload') {
     location.reload(true);
     return;
   }
 
+  // 役割（Role）の手動切り替えコマンド
+  if (text.toLowerCase() === 'set_b') {
+    localStorage.setItem('user_role', 'user_b');
+    alert('ユーザー役割を user_b に固定しました！アプリを更新します。');
+    location.reload(true);
+    return;
+  }
+  if (text.toLowerCase() === 'set_a') {
+    localStorage.setItem('user_role', 'user_a');
+    alert('ユーザー役割を user_a に固定しました！アプリを更新します。');
+    location.reload(true);
+    return;
+  }
+
+  // トークン設定
   if (text.startsWith('ghp_')) {
     localStorage.setItem('gh_token', text);
     appendSystemMsg('🔑 通信キーの設定が完了しました！オフライン機能が有効です。');
