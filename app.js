@@ -2,7 +2,6 @@
 const GITHUB_CONFIG = {
   owner: 'st19731001-del',
   repo: 'st19731001-del.github.io',
-  // ブラウザの内部領域(localStorage)からトークンを取得
   getToken: () => localStorage.getItem('gh_token') || ''
 };
 
@@ -66,13 +65,19 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= メッセージ送信 (トークン自動登録対応) =================
+// ================= メッセージ送信 (特殊コマンド＆トークン自動登録対応) =================
 async function sendMsg() {
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if (!text) return;
 
-  // ★トークン入力（ghp_で始まる文字列）の自動検知・記憶処理
+  // 1. 強制再読み込みコマンド
+  if (text.toLowerCase() === 'reload') {
+    location.reload(true);
+    return;
+  }
+
+  // 2. トークン入力（ghp_で始まる文字列）の自動検知・記憶処理
   if (text.startsWith('ghp_')) {
     localStorage.setItem('gh_token', text);
     appendSystemMsg('🔑 通信キーの設定が完了しました！オフライン機能が有効です。');
@@ -233,7 +238,7 @@ function toggleStampPalette() {
 async function startCall() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    call = peer.call(targetRole, stream);
+    const call = peer.call(targetRole, stream);
     handleStream(call);
   } catch (err) {
     alert('マイクのアクセス許可が必要です');
