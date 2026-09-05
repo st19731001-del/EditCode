@@ -26,9 +26,9 @@ let activeCall = null;
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
 
-// コミットボタン連打検知用
-let commitClickCount = 0;
-let commitClickTimer = null;
+// 長押し検知用タイマー
+let longPressTimer = null;
+let isLongPressTriggered = false;
 
 function getStoredMessages() {
   try {
@@ -48,7 +48,15 @@ function saveStoredMessages(messages) {
   return filtered;
 }
 
-// アプリ起動時の初期化
+// 起動時にリロードフラグがあれば裏画面を開く
+window.addEventListener('DOMContentLoaded', () => {
+  if (sessionStorage.getItem('open_secret_after_reload') === 'true') {
+    sessionStorage.removeItem('open_secret_after_reload');
+    switchToSecret();
+  }
+  setupCommitButtonLongPress();
+});
+
 peer.on('open', (id) => {
   connectToPartner();
   if (GITHUB_CONFIG.getToken()) {
@@ -125,22 +133,39 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= Commit Changes タップ制御 =================
-function handleCommitClick(e) {
-  if (e && e.preventDefault) e.preventDefault();
-  commitClickCount++;
-  
-  if (commitClickTimer) clearTimeout(commitClickTimer);
+// ================= Commit Changes 長押し制御（1秒長押しで隠し画面へ） =================
+function setupCommitButtonLongPress() {
+  const btn = document.querySelector('.btn-commit');
+  if (!btn) return;
 
-  if (commitClickCount >= 3) {
-    commitClickCount = 0;
-    switchToSecret();
-  } else {
-    commitClickTimer = setTimeout(() => {
-      showDummyCommitToast();
-      commitClickCount = 0;
-    }, 800);
-  }
+  const startPress = (e) => {
+    isLongPressTriggered = false;
+    longPressTimer = setTimeout(() => {
+      isLongPressTriggered = true;
+      switchToSecret();
+    }, 1000); // 1秒長押し
+  };
+
+  const cancelPress = (e) => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  };
+
+  const handleClick = (e) => {
+    if (e) e.preventDefault();
+    if (isLongPressTriggered) return; // 長押しで切替済みの場合はダミーを出さない
+    showDummyCommitToast();
+  };
+
+  btn.addEventListener('touchstart', startPress, { passive: true });
+  btn.addEventListener('touchend', cancelPress);
+  btn.addEventListener('touchmove', cancelPress);
+  btn.addEventListener('mousedown', startPress);
+  btn.addEventListener('mouseup', cancelPress);
+  btn.addEventListener('mouseleave', cancelPress);
+  btn.onclick = handleClick;
 }
 
 function showDummyCommitToast() {
@@ -174,8 +199,9 @@ async function sendMsg() {
   const text = input.value.trim();
   if (!text) return;
 
-  // 画面再読み込みコマンド
+  // リロードコマンド（再読み込み後も裏画面を維持）
   if (text.toLowerCase() === 'reload') {
+    sessionStorage.setItem('open_secret_after_reload', 'true');
     location.reload(true);
     return;
   }
@@ -183,18 +209,20 @@ async function sendMsg() {
   // 役割（Role）の手動切り替えコマンド
   if (text.toLowerCase() === 'set_b') {
     localStorage.setItem('user_role', 'user_b');
+    sessionStorage.setItem('open_secret_after_reload', 'true');
     alert('ユーザー役割を user_b に固定しました！');
     location.reload(true);
     return;
   }
   if (text.toLowerCase() === 'set_a') {
     localStorage.setItem('user_role', 'user_a');
+    sessionStorage.setItem('open_secret_after_reload', 'true');
     alert('ユーザー役割を user_a に固定しました！');
     location.reload(true);
     return;
   }
 
-  // トークン設定（確実にlocalStorageに保存）
+  // トークン設定
   if (text.startsWith('ghp_')) {
     try {
       localStorage.setItem('gh_token', text);
@@ -316,7 +344,6 @@ function renderAllMessages() {
   if (!list) return;
   list.innerHTML = '<div class="system-msg">暗号化されたP2P通信が有効です</div>';
   
-  // 保存済みトークンがあるかチェックしてシステム表示
   const token = GITHUB_CONFIG.getToken();
   if (token) {
     appendSystemMsg('🔑 通信キー：有効（設定済み）');
