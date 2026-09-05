@@ -12,9 +12,10 @@ const targetRole = myRole === 'user_a' ? 'user_b' : 'user_a';
 const peer = new Peer(myRole);
 let activeConn = null;
 let activeCall = null;
-let currentReplyTo = null; // 現在リプライ対象のメッセージ
 
-// ローカルストレージ管理
+let currentReplyTo = null;
+let selectedMsgTarget = { text: '', id: '' }; // 長押しで選択されたメッセージ
+
 function getStoredMessages() {
   return JSON.parse(localStorage.getItem('chat_history') || '[]');
 }
@@ -93,6 +94,20 @@ function setupConnectionEvents() {
   });
 }
 
+// ================= メッセージ非表示 / 表示切替 =================
+function toggleMessageVisibility() {
+  const list = document.getElementById('message-list');
+  const btn = document.querySelector('.btn-show');
+  
+  if (list.classList.contains('hidden-messages')) {
+    list.classList.remove('hidden-messages');
+    btn.innerText = '🙈 非表示';
+  } else {
+    list.classList.add('hidden-messages');
+    btn.innerText = '👁️ 表示';
+  }
+}
+
 // ================= メッセージ送信 =================
 async function sendMsg() {
   const input = document.getElementById('chat-input');
@@ -154,38 +169,17 @@ async function dispatchMessage(text, isStamp = false) {
   }
 }
 
-// ================= リプライ操作 =================
-function setReplyTarget(text) {
-  currentReplyTo = { text: text };
-  document.getElementById('reply-text').innerText = text;
-  document.getElementById('reply-preview').classList.remove('hidden');
-}
-
-function cancelReply() {
-  currentReplyTo = null;
-  document.getElementById('reply-preview').classList.add('hidden');
-}
-
-// ================= 長押しメニュー (コピー / リプライ / 削除) =================
+// ================= タップ操作メニューシート =================
 function attachLongPressMenu(msgElement, msgText, msgId) {
   let timer = null;
 
-  const showMenu = () => {
-    const choice = prompt("操作を選択してください:\n1: 📋 コピー\n2: 💬 リプライ（返信）\n3: 🗑️ 削除（取り消し）\n\n(数字 1〜3 を入力)", "1");
-    if (choice === "1") {
-      navigator.clipboard.writeText(msgText);
-      alert("コピーしました！");
-    } else if (choice === "2") {
-      setReplyTarget(msgText);
-    } else if (choice === "3") {
-      if (confirm("このメッセージを削除しますか？")) {
-        deleteMessage(msgId);
-      }
-    }
+  const openSheet = () => {
+    selectedMsgTarget = { text: msgText, id: msgId };
+    document.getElementById('action-sheet').classList.remove('hidden');
   };
 
   msgElement.addEventListener('touchstart', () => {
-    timer = setTimeout(showMenu, 500);
+    timer = setTimeout(openSheet, 500);
   }, { passive: true });
 
   msgElement.addEventListener('touchend', () => clearTimeout(timer));
@@ -193,8 +187,36 @@ function attachLongPressMenu(msgElement, msgText, msgId) {
 
   msgElement.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    showMenu();
+    openSheet();
   });
+}
+
+function closeActionSheet() {
+  document.getElementById('action-sheet').classList.add('hidden');
+}
+
+function handleMenuCopy() {
+  navigator.clipboard.writeText(selectedMsgTarget.text);
+  closeActionSheet();
+}
+
+function handleMenuReply() {
+  currentReplyTo = { text: selectedMsgTarget.text };
+  document.getElementById('reply-text').innerText = selectedMsgTarget.text;
+  document.getElementById('reply-preview').classList.remove('hidden');
+  closeActionSheet();
+}
+
+function handleMenuDelete() {
+  if (confirm("このメッセージを削除しますか？")) {
+    deleteMessage(selectedMsgTarget.id);
+  }
+  closeActionSheet();
+}
+
+function cancelReply() {
+  currentReplyTo = null;
+  document.getElementById('reply-preview').classList.add('hidden');
 }
 
 // ================= 画面描画 =================
@@ -405,6 +427,13 @@ function appendSystemMsg(text) {
 function switchToSecret() {
   document.getElementById('editor-screen').classList.add('hidden');
   document.getElementById('secret-screen').classList.remove('hidden');
+  
+  // チャット画面遷移時は初期状態を「非表示」にする
+  const list = document.getElementById('message-list');
+  const btn = document.querySelector('.btn-show');
+  list.classList.add('hidden-messages');
+  if (btn) btn.innerText = '👁️ 表示';
+
   renderAllMessages();
   connectToPartner();
   updateBadge(0);
