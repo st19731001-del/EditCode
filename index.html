@@ -19,7 +19,6 @@
   <div id="editor-screen" class="screen">
     <header class="top-bar">
       <div class="file-info">
-        <!-- 左上の青いJSアイコン1回タップで裏画面へ -->
         <span class="file-icon" id="js-icon-trigger">JS</span>
         <span class="file-name">analytics_core.js</span>
       </div>
@@ -31,6 +30,7 @@
         1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15
       </div>
       <div class="code-area-wrapper">
+        <!-- 完全に自由に入力できるエディタ -->
         <textarea class="code-area" id="code-area" spellcheck="false">// System Core Analytics Module v2.4.1
 import { initializeApp } from 'firebase/app';
 import { getAnalytics, logEvent } from 'firebase/analytics';
@@ -61,11 +61,11 @@ export function trackUserSession(sessionId) {
         <span class="status-dot"></span>
         <span id="role-display" class="partner-name">Me: user_a | Partner (Offline)</span>
       </div>
-      <!-- 文字を無くし、絵文字アイコンのみにして推測を完全に防止 -->
+      <!-- アイコンを 📞 👁️ 🔓 に統一 -->
       <div class="header-btns">
         <button class="btn-call" onclick="startCall()">📞</button>
         <button class="btn-show" onclick="toggleMessageVisibility()">👁️</button>
-        <button class="btn-hide" onclick="hideToEditor()">⚡</button>
+        <button class="btn-hide" onclick="hideToEditor()">🔓</button>
       </div>
     </header>
 
@@ -74,7 +74,7 @@ export function trackUserSession(sessionId) {
         <div class="system-msg">暗号化されたP2P通信が有効です</div>
       </div>
 
-      <!-- スタンプパレット（ご指定の絵文字を追加） -->
+      <!-- スタンプパレット -->
       <div id="stamp-palette" class="stamp-palette hidden">
         <div class="stamp-grid">
           <span onclick="sendStamp('🥹')">🥹</span>
