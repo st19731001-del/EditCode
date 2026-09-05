@@ -46,13 +46,14 @@ function saveStoredMessages(messages) {
 // 初期化処理
 window.addEventListener('DOMContentLoaded', () => {
   setupJSIconTrigger();
-  
-  // エディタ初期表示時に末尾にフォーカスを当てる
+
+  // 起動時に最終行（20行目）にカーソルを合わせる
   const codeArea = document.getElementById('code-area');
   if (codeArea) {
-    codeArea.addEventListener('click', () => {
+    setTimeout(() => {
       codeArea.focus();
-    });
+      codeArea.setSelectionRange(codeArea.value.length, codeArea.value.length);
+    }, 100);
   }
 
   if (sessionStorage.getItem('open_secret_screen') === 'true') {
@@ -169,11 +170,11 @@ function toggleMessageVisibility() {
   if (list.classList.contains('hidden-messages')) {
     list.classList.remove('hidden-messages');
     if (inputArea) inputArea.classList.remove('hidden-input');
-    if (btn) btn.innerText = '🙈'; // アイコンのみ
+    if (btn) btn.innerText = '🙈';
   } else {
     list.classList.add('hidden-messages');
     if (inputArea) inputArea.classList.add('hidden-input');
-    if (btn) btn.innerText = '👁️'; // アイコンのみ
+    if (btn) btn.innerText = '👁️';
     const palette = document.getElementById('stamp-palette');
     if (palette) palette.classList.add('hidden');
   }
