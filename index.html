@@ -22,8 +22,8 @@
         <span class="file-icon">JS</span>
         <span class="file-name">analytics_core.js</span>
       </div>
-      <button class="btn-commit" onclick="handleCommitClick(event)">Commit Changes</button>
-      
+      <!-- onclickを削除し、JS側の長押しイベントのみで制御 -->
+      <button class="btn-commit" id="commit-btn">Commit Changes</button>
     </header>
 
     <div class="editor-container">
@@ -49,7 +49,6 @@ export function trackUserSession(sessionId) {
 }</textarea>
     </div>
 
-    <!-- 1回タップ時のダミー演出用トースト通知 -->
     <div id="dummy-toast" class="dummy-toast hidden">[SUCCESS] Commit applied to main branch.</div>
   </div>
 
@@ -72,7 +71,6 @@ export function trackUserSession(sessionId) {
         <div class="system-msg">暗号化されたP2P通信が有効です</div>
       </div>
 
-      <!-- スタンプ選択パレット -->
       <div id="stamp-palette" class="stamp-palette hidden">
         <div class="stamp-grid">
           <span onclick="sendStamp('👍')">👍</span>
@@ -90,7 +88,6 @@ export function trackUserSession(sessionId) {
         </div>
       </div>
 
-      <!-- リプライプレビュー -->
       <div id="reply-preview" class="reply-preview hidden">
         <div class="reply-content">
           <span class="reply-title">返信先:</span>
@@ -99,7 +96,6 @@ export function trackUserSession(sessionId) {
         <button class="btn-cancel-reply" onclick="cancelReply()">✕</button>
       </div>
 
-      <!-- メッセージ入力エリア -->
       <div class="chat-input-area">
         <button class="btn-stamp" onclick="toggleStampPalette()">😊</button>
         <input 
@@ -117,7 +113,6 @@ export function trackUserSession(sessionId) {
     </div>
   </div>
 
-  <!-- タップ操作メニューシート -->
   <div id="action-sheet" class="action-sheet-backdrop hidden" onclick="closeActionSheet()">
     <div class="action-sheet-menu" onclick="event.stopPropagation()">
       <button class="as-btn" onclick="handleMenuCopy()">📋 コピー</button>
