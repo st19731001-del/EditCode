@@ -2,7 +2,13 @@
 const GITHUB_CONFIG = {
   owner: 'st19731001-del',
   repo: 'st19731001-del.github.io',
-  getToken: () => localStorage.getItem('gh_token') || ''
+  getToken: () => {
+    try {
+      return localStorage.getItem('gh_token') || '';
+    } catch(e) {
+      return '';
+    }
+  }
 };
 
 // 役割（Role）の判定：localStorage優先 -> URLパラメータ -> デフォルト user_a
@@ -36,14 +42,15 @@ function saveStoredMessages(messages) {
   const now = Date.now();
   const threeDays = 3 * 24 * 60 * 60 * 1000;
   const filtered = messages.filter(m => (now - m.timestamp) < threeDays);
-  localStorage.setItem('chat_history', JSON.stringify(filtered));
+  try {
+    localStorage.setItem('chat_history', JSON.stringify(filtered));
+  } catch(e) {}
   return filtered;
 }
 
 // アプリ起動時の初期化
 peer.on('open', (id) => {
   connectToPartner();
-  // トークンが保存されていれば自動でオフラインメッセージを取得
   if (GITHUB_CONFIG.getToken()) {
     fetchOfflineMessages();
   }
@@ -176,24 +183,29 @@ async function sendMsg() {
   // 役割（Role）の手動切り替えコマンド
   if (text.toLowerCase() === 'set_b') {
     localStorage.setItem('user_role', 'user_b');
-    alert('ユーザー役割を user_b に固定しました！アプリを更新します。');
+    alert('ユーザー役割を user_b に固定しました！');
     location.reload(true);
     return;
   }
   if (text.toLowerCase() === 'set_a') {
     localStorage.setItem('user_role', 'user_a');
-    alert('ユーザー役割を user_a に固定しました！アプリを更新します。');
+    alert('ユーザー役割を user_a に固定しました！');
     location.reload(true);
     return;
   }
 
-  // トークン設定
+  // トークン設定（確実にlocalStorageに保存）
   if (text.startsWith('ghp_')) {
-    localStorage.setItem('gh_token', text);
-    appendSystemMsg('🔑 通信キーの設定が完了しました！オフライン機能が有効です。');
+    try {
+      localStorage.setItem('gh_token', text);
+      alert('🔑 通信キーを端末に保存しました！');
+    } catch(e) {
+      alert('保存エラー: プライベートブラウジングモードを解除してください');
+    }
     input.value = '';
     const palette = document.getElementById('stamp-palette');
     if (palette) palette.classList.add('hidden');
+    renderAllMessages();
     fetchOfflineMessages();
     return;
   }
@@ -304,9 +316,12 @@ function renderAllMessages() {
   if (!list) return;
   list.innerHTML = '<div class="system-msg">暗号化されたP2P通信が有効です</div>';
   
-  // 保存済みトークンがある場合はシステムメッセージを表示
-  if (GITHUB_CONFIG.getToken()) {
-    appendSystemMsg('🔑 通信キー（設定済み）');
+  // 保存済みトークンがあるかチェックしてシステム表示
+  const token = GITHUB_CONFIG.getToken();
+  if (token) {
+    appendSystemMsg('🔑 通信キー：有効（設定済み）');
+  } else {
+    appendSystemMsg('⚠️ 通信キー未設定：ghp_... を入力してください');
   }
 
   const messages = saveStoredMessages(getStoredMessages());
@@ -533,7 +548,6 @@ function switchToSecret() {
   renderAllMessages();
   connectToPartner();
   
-  // トークンが保存されていれば開いた時に未読取得
   if (GITHUB_CONFIG.getToken()) {
     fetchOfflineMessages();
   }
