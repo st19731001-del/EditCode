@@ -56,12 +56,16 @@ export function trackUserSession(sessionId) {
         <span class="status-dot"></span>
         <span class="partner-name">Partner (Offline)</span>
       </div>
-      <button class="btn-call" onclick="startCall()">📞 通話</button>
-      <button class="btn-hide" onclick="hideToEditor()">🔒 隠す</button>
+      <div class="header-btns">
+        <button class="btn-call" onclick="startCall()">📞 通話</button>
+        <button class="btn-show" onclick="toggleMessageVisibility()">👁️ 表示</button>
+        <button class="btn-hide" onclick="hideToEditor()">🔒 隠す</button>
+      </div>
     </header>
 
     <div class="chat-container">
-      <div class="message-list" id="message-list">
+      <!-- メッセージリスト（初期状態は非表示） -->
+      <div class="message-list hidden-messages" id="message-list">
         <div class="system-msg">暗号化されたP2P通信が有効です</div>
       </div>
 
@@ -83,7 +87,7 @@ export function trackUserSession(sessionId) {
         </div>
       </div>
 
-      <!-- リプライプレビュー（初期状態は非表示） -->
+      <!-- リプライプレビュー -->
       <div id="reply-preview" class="reply-preview hidden">
         <div class="reply-content">
           <span class="reply-title">返信先:</span>
@@ -107,6 +111,16 @@ export function trackUserSession(sessionId) {
         >
         <button onclick="sendMsg()">送信</button>
       </div>
+    </div>
+  </div>
+
+  <!-- タップ操作メニューシート（長押し時に発動） -->
+  <div id="action-sheet" class="action-sheet-backdrop hidden" onclick="closeActionSheet()">
+    <div class="action-sheet-menu" onclick="event.stopPropagation()">
+      <button class="as-btn" onclick="handleMenuCopy()">📋 コピー</button>
+      <button class="as-btn" onclick="handleMenuReply()">💬 リプライ（返信）</button>
+      <button class="as-btn as-danger" onclick="handleMenuDelete()">🗑️ 削除</button>
+      <button class="as-btn as-cancel" onclick="closeActionSheet()">キャンセル</button>
     </div>
   </div>
 
