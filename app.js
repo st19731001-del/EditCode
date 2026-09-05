@@ -25,9 +25,6 @@ let activeCall = null;
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
 
-let longPressTimer = null;
-let isLongPressTriggered = false;
-
 function getStoredMessages() {
   try {
     return JSON.parse(localStorage.getItem('chat_history') || '[]');
@@ -46,10 +43,9 @@ function saveStoredMessages(messages) {
   return filtered;
 }
 
-// 起動・再読み込み時の初期化
+// 初期化処理
 window.addEventListener('DOMContentLoaded', () => {
-  setupCommitButtonLongPress();
-  // リロード後またはフラグが立っている場合は裏画面を自動起動
+  setupJSIconTrigger();
   if (sessionStorage.getItem('open_secret_screen') === 'true') {
     switchToSecret();
   }
@@ -99,6 +95,8 @@ function setupConnectionEvents() {
   if (statusDot) statusDot.style.background = '#4caf50';
   if (roleDisplay) roleDisplay.innerText = `Me: ${myRole} | Partner (Online)`;
 
+  renderAllMessages();
+
   if (activeConn && activeConn.open) {
     activeConn.send({ type: 'read_ack' });
     markMyMessagesAsRead();
@@ -131,40 +129,15 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= Commit Changes 長押し制御（1秒押しっぱなしで画面切替） =================
-function setupCommitButtonLongPress() {
-  const btn = document.getElementById('commit-btn');
-  if (!btn) return;
+// ================= 青い「JS」アイコン【1回タップ】で隠し画面起動 =================
+function setupJSIconTrigger() {
+  const icon = document.getElementById('js-icon-trigger');
+  if (!icon) return;
 
-  const startPress = (e) => {
-    isLongPressTriggered = false;
-    longPressTimer = setTimeout(() => {
-      isLongPressTriggered = true;
-      switchToSecret();
-    }, 1000); // 1000ms = 1秒長押し
-  };
-
-  const cancelPress = (e) => {
-    if (longPressTimer) {
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-    }
-  };
-
-  const handleClick = (e) => {
-    if (e) e.preventDefault();
-    if (!isLongPressTriggered) {
-      showDummyCommitToast();
-    }
-  };
-
-  btn.addEventListener('touchstart', startPress, { passive: true });
-  btn.addEventListener('touchend', cancelPress);
-  btn.addEventListener('touchmove', cancelPress);
-  btn.addEventListener('mousedown', startPress);
-  btn.addEventListener('mouseup', cancelPress);
-  btn.addEventListener('mouseleave', cancelPress);
-  btn.addEventListener('click', handleClick);
+  icon.addEventListener('click', (e) => {
+    e.preventDefault();
+    switchToSecret(); // 1回タップでそのまま隠し画面へ
+  });
 }
 
 function showDummyCommitToast() {
@@ -176,18 +149,26 @@ function showDummyCommitToast() {
   }, 1500);
 }
 
-// ================= メッセージ非表示 / 表示切替 =================
+// ================= メッセージ非表示 / 表示切替（入力欄も連動） =================
 function toggleMessageVisibility() {
   const list = document.getElementById('message-list');
+  const inputArea = document.getElementById('input-area');
   const btn = document.querySelector('.btn-show');
   
   if (!list) return;
+
   if (list.classList.contains('hidden-messages')) {
+    // 表示状態へ切り替え
     list.classList.remove('hidden-messages');
+    if (inputArea) inputArea.classList.remove('hidden-input');
     if (btn) btn.innerText = '🙈 非表示';
   } else {
+    // 非表示状態へ切り替え（入力欄も隠す）
     list.classList.add('hidden-messages');
+    if (inputArea) inputArea.classList.add('hidden-input');
     if (btn) btn.innerText = '👁️ 表示';
+    const palette = document.getElementById('stamp-palette');
+    if (palette) palette.classList.add('hidden');
   }
 }
 
@@ -198,14 +179,12 @@ async function sendMsg() {
   const text = input.value.trim();
   if (!text) return;
 
-  // リロード（再読み込み後も裏画面を維持）
   if (text.toLowerCase() === 'reload') {
     sessionStorage.setItem('open_secret_screen', 'true');
     location.reload(true);
     return;
   }
 
-  // 役割手動変更
   if (text.toLowerCase() === 'set_b') {
     localStorage.setItem('user_role', 'user_b');
     sessionStorage.setItem('open_secret_screen', 'true');
@@ -221,7 +200,6 @@ async function sendMsg() {
     return;
   }
 
-  // トークン保存
   if (text.startsWith('ghp_')) {
     try {
       localStorage.setItem('gh_token', text);
@@ -523,7 +501,7 @@ function toggleStampPalette() {
 async function startCall() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const call = peer.call(targetRole, stream);
+    call = peer.call(targetRole, stream);
     handleStream(call);
   } catch (err) {
     alert('マイクのアクセス許可が必要です');
@@ -562,8 +540,12 @@ function switchToSecret() {
   if (secret) secret.classList.remove('hidden');
   
   const list = document.getElementById('message-list');
+  const inputArea = document.getElementById('input-area');
   const btn = document.querySelector('.btn-show');
+  
+  // 初期状態は非表示（メッセージも入力欄も隠す）
   if (list) list.classList.add('hidden-messages');
+  if (inputArea) inputArea.classList.add('hidden-input');
   if (btn) btn.innerText = '👁️ 表示';
 
   const roleDisplay = document.getElementById('role-display');
