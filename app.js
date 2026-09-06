@@ -82,7 +82,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// 【4番】画面消灯（スリープ）やバックグラウンド移行時に表画面へ強制復帰
+// 画面消灯（スリープ）やバックグラウンド移行時に表画面へ強制復帰
 document.addEventListener('visibilitychange', () => {
   if (document.hidden || document.visibilityState === 'hidden') {
     hideToEditor();
@@ -166,11 +166,6 @@ function setupConnectionEvents() {
 
   renderAllMessages();
 
-  if (activeConn && activeConn.open) {
-    activeConn.send({ type: 'read_ack_all' });
-    markMyMessagesAsRead();
-  }
-
   activeConn.on('data', (data) => {
     if (data.type === 'chat') {
       const list = document.getElementById('message-list');
@@ -208,7 +203,7 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= 【2番】青い「JS」アイコンタップ判定（3回連打＋英語認証ダイアログ） =================
+// 青い「JS」アイコンタップ判定（3回連打＋英語認証ダイアログ）
 function setupJSIconTrigger() {
   const icon = document.getElementById('js-icon-trigger');
   if (!icon) return;
@@ -243,7 +238,7 @@ function setupJSIconTrigger() {
   icon.addEventListener('click', handleTap);
 }
 
-// ================= Commit Changes ボタン（ダミー成功トースト） =================
+// Commit Changes ボタン（ダミー成功トースト）
 function showDummyCommitToast() {
   const toast = document.getElementById('dummy-toast');
   if (toast) {
@@ -395,14 +390,15 @@ async function dispatchMessage(text, isStamp = false) {
   const isOnline = activeConn && activeConn.open;
   const now = Date.now();
   
+  // 送信時は必ず「未読（isRead: false）」で保存・送信
   const msgObj = {
     id: msgId,
     text: text,
     replyText: currentReplyTo ? currentReplyTo.text : null,
     sender: 'me',
     isStamp: isStamp,
-    isRead: isOnline,
-    readAt: isOnline ? now : null,
+    isRead: false,
+    readAt: null,
     timestamp: now
   };
 
@@ -567,7 +563,7 @@ function markMyMessagesAsRead(targetId = null) {
     if (m.sender === 'me' && (!targetId || m.id === targetId)) {
       if (!m.isRead) {
         m.isRead = true;
-        m.readAt = now;
+        m.readAt = now; // 相手に読まれたタイミングで既読日時を割り当て
         updated = true;
       }
     }
