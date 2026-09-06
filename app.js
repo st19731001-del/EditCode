@@ -27,17 +27,6 @@ let reconnectTimer = null;
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
 
-function getTriggerTapCount() {
-  const val = localStorage.getItem('js_trigger_tap_count');
-  return val ? parseInt(val, 10) : 1;
-}
-
-function setTriggerTapCount(count) {
-  try {
-    localStorage.setItem('js_trigger_tap_count', String(count));
-  } catch(e) {}
-}
-
 function getStoredMessages() {
   try {
     return JSON.parse(localStorage.getItem('chat_history') || '[]');
@@ -196,6 +185,7 @@ function setupConnectionEvents() {
   });
 }
 
+// ================= 青い「JS」アイコンタップ判定（3回タップ固定） =================
 function setupJSIconTrigger() {
   const icon = document.getElementById('js-icon-trigger');
   if (!icon) return;
@@ -204,18 +194,18 @@ function setupJSIconTrigger() {
   let tapTimer = null;
 
   const triggerAction = () => {
-    const requiredTaps = getTriggerTapCount();
     tapCount++;
 
     if (tapTimer) clearTimeout(tapTimer);
 
-    if (tapCount >= requiredTaps) {
+    // 3回タップで隠し画面へ
+    if (tapCount >= 3) {
       tapCount = 0;
       switchToSecret();
     } else {
       tapTimer = setTimeout(() => {
         tapCount = 0;
-      }, 600);
+      }, 800); // 0.8秒以内に3回連続タップ
     }
   };
 
@@ -225,34 +215,17 @@ function setupJSIconTrigger() {
   });
 }
 
+// ================= Commit Changes ボタン（ダミーメッセージ表示） =================
 function showDummyCommitToast() {
-  const current = getTriggerTapCount();
-  const next = current === 1 ? 3 : 1;
-  
-  const choice = confirm(`[Git Config] Select Trigger Mode:\n\nCurrent: ${current}-Tap Mode\nSwitch to: ${next}-Tap Mode?`);
-  
-  if (choice) {
-    setTriggerTapCount(next);
-    const toast = document.getElementById('dummy-toast');
-    if (toast) {
-      toast.innerText = `[CONFIG UPDATED] Trigger mode set to ${next}-Tap.`;
-      toast.classList.remove('hidden');
-      setTimeout(() => {
-        toast.classList.add('hidden');
-        toast.innerText = '[SUCCESS] Commit applied to main branch.';
-      }, 2000);
-    }
-  } else {
-    const toast = document.getElementById('dummy-toast');
-    if (toast) {
-      toast.classList.remove('hidden');
-      setTimeout(() => {
-        toast.classList.add('hidden');
-      }, 1500);
-    }
+  const toast = document.getElementById('dummy-toast');
+  if (toast) {
+    toast.innerText = '[SUCCESS] Commit applied to main branch.';
+    toast.classList.remove('hidden');
+    setTimeout(() => {
+      toast.classList.add('hidden');
+    }, 2000);
   }
 }
-
 function clearPartnerUnreadState() {
   let messages = getStoredMessages();
   let updated = false;
@@ -296,16 +269,21 @@ function updateUnreadBadgeCount() {
   updateBadge(unreadCount);
 }
 
+// ================= メッセージ非表示 / 表示切替（表示バグ修正） =================
 function toggleMessageVisibility() {
   const list = document.getElementById('message-list');
-  const inputArea = document.getElementById('input-area');
+  const inputArea = document.getElementById('chat-input-area') || document.getElementById('input-area');
   const btn = document.querySelector('.btn-show');
   
   if (!list) return;
 
   if (list.classList.contains('hidden-messages')) {
+    // 表示状態に戻す
     list.classList.remove('hidden-messages');
-    if (inputArea) inputArea.classList.remove('hidden-input');
+    if (inputArea) {
+      inputArea.classList.remove('hidden-input');
+      inputArea.style.display = ''; // styleレベルでの非表示も確実に解除
+    }
     if (btn) btn.innerText = '🙈';
     
     clearPartnerUnreadState();
@@ -314,8 +292,11 @@ function toggleMessageVisibility() {
       activeConn.send({ type: 'read_ack_all' });
     }
   } else {
+    // マスク（非表示）状態にする
     list.classList.add('hidden-messages');
-    if (inputArea) inputArea.classList.add('hidden-input');
+    if (inputArea) {
+      inputArea.classList.add('hidden-input');
+    }
     if (btn) btn.innerText = '👁️';
     const palette = document.getElementById('stamp-palette');
     if (palette) palette.classList.add('hidden');
@@ -777,7 +758,7 @@ function switchToSecret() {
   if (secret) secret.classList.remove('hidden');
   
   const list = document.getElementById('message-list');
-  const inputArea = document.getElementById('input-area');
+  const inputArea = document.getElementById('chat-input-area') || document.getElementById('input-area');
   const btn = document.querySelector('.btn-show');
   
   // 画面切り替え直後はメッセージと入力欄を非表示（マスク）状態にする
