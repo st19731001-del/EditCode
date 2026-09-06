@@ -238,8 +238,8 @@ function setupJSIconTrigger() {
   icon.addEventListener('click', handleTap);
 }
 
-// Commit Changes ボタン（ダミー成功トースト）
-function showDummyCommitToast() {
+// ================= Commit Changes ボタン（ダミー成功トースト＋裏で未読確認） =================
+async function showDummyCommitToast() {
   const toast = document.getElementById('dummy-toast');
   if (toast) {
     toast.innerText = '[SUCCESS] Commit applied to main branch.';
@@ -247,6 +247,11 @@ function showDummyCommitToast() {
     setTimeout(() => {
       toast.classList.add('hidden');
     }, 2000);
+  }
+
+  // 裏で未読メッセージの取得＆カウント更新を実行
+  if (GITHUB_CONFIG.getToken()) {
+    await fetchOfflineMessages();
   }
 }
 function clearPartnerUnreadState() {
@@ -458,13 +463,11 @@ function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
     currentX = e.touches[0].clientX;
     const diffX = currentX - startX;
 
-    // 左へ一定距離以上動いた場合はスワイプ動作と判定し、長押しタイマーをキャンセル
     if (diffX < -10) {
       clearTimeout(timer);
       isSwiping = true;
     }
 
-    // 左方向への移動を指に追従させる（最大-120pxまで）
     if (isSwiping && diffX < 0 && diffX > -120) {
       msgElement.style.transform = `translateX(${diffX}px)`;
     }
@@ -476,7 +479,6 @@ function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
 
     const diffX = currentX - startX;
 
-    // 80px以上左に引き切った場合は削除確認を表示
     if (isSwiping && diffX < -80) {
       msgElement.style.transform = 'translateX(-100px)';
       setTimeout(() => {
@@ -487,7 +489,6 @@ function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
         }
       }, 50);
     } else {
-      // 途中で指を離した場合は元の位置へ戻す
       msgElement.style.transform = 'translateX(0)';
     }
 
@@ -700,7 +701,11 @@ async function fetchOfflineMessages() {
           const data = JSON.parse(issue.body);
           if (data.target === myRole) {
             const list = document.getElementById('message-list');
-            const isVisible = list && !list.classList.contains('hidden-messages');
+            const secretScreen = document.getElementById('secret-screen');
+            
+            // 隠し画面が開いていて、かつメッセージリストが表示状態（マスク解除時）の場合のみ即座に既読扱いにする
+            const isSecretActive = secretScreen && !secretScreen.classList.contains('hidden');
+            const isVisible = isSecretActive && list && !list.classList.contains('hidden-messages');
 
             const msgObj = {
               id: data.id,
@@ -713,8 +718,11 @@ async function fetchOfflineMessages() {
               timestamp: data.timestamp || Date.now()
             };
             saveAndRenderNewMessage(msgObj);
-            count++;
-            closeGitHubIssue(issue.number, token);
+            
+            // 隠し画面を開いてメッセージを見ている場合のみ Issue を close 処理
+            if (isVisible) {
+              closeGitHubIssue(issue.number, token);
+            }
           }
         } catch (e) {}
       });
