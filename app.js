@@ -238,7 +238,7 @@ function setupJSIconTrigger() {
   icon.addEventListener('click', handleTap);
 }
 
-// ================= Commit Changes ボタン（ダミー成功トースト＋裏で未読確認） =================
+// Commit Changes ボタン（ダミー成功トースト＋未読確認）
 async function showDummyCommitToast() {
   const toast = document.getElementById('dummy-toast');
   if (toast) {
@@ -249,7 +249,7 @@ async function showDummyCommitToast() {
     }, 2000);
   }
 
-  // 裏で未読メッセージの取得＆カウント更新を実行
+  // 非同期で未読メッセージの取得＆ボタンバッジ更新を確実に行う
   if (GITHUB_CONFIG.getToken()) {
     await fetchOfflineMessages();
   }
@@ -438,11 +438,13 @@ function formatTime(timestamp) {
   }
 }
 
-// 長押し ＆ 横スライド（スワイプ）削除処理
+// 長押し ＆ 横スライド（スワイプ）削除処理（動作改善版）
 function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
   let timer = null;
   let startX = 0;
+  let startY = 0;
   let currentX = 0;
+  let currentY = 0;
   let isSwiping = false;
 
   const openSheet = () => {
@@ -453,7 +455,9 @@ function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
 
   msgElement.addEventListener('touchstart', (e) => {
     startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
     currentX = startX;
+    currentY = startY;
     isSwiping = false;
     msgElement.style.transition = 'none';
     timer = setTimeout(openSheet, 500);
@@ -461,9 +465,12 @@ function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
 
   msgElement.addEventListener('touchmove', (e) => {
     currentX = e.touches[0].clientX;
+    currentY = e.touches[0].clientY;
     const diffX = currentX - startX;
+    const diffY = currentY - startY;
 
-    if (diffX < -10) {
+    // 横方向の移動距離が縦方向より大きい場合のみスワイプ動作と判定
+    if (Math.abs(diffX) > Math.abs(diffY) && diffX < -10) {
       clearTimeout(timer);
       isSwiping = true;
     }
@@ -479,7 +486,7 @@ function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
 
     const diffX = currentX - startX;
 
-    if (isSwiping && diffX < -80) {
+    if (isSwiping && diffX < -60) {
       msgElement.style.transform = 'translateX(-100px)';
       setTimeout(() => {
         if (confirm("このメッセージを削除しますか？")) {
@@ -493,7 +500,9 @@ function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
     }
 
     startX = 0;
+    startY = 0;
     currentX = 0;
+    currentY = 0;
     isSwiping = false;
   });
 
@@ -694,7 +703,6 @@ async function fetchOfflineMessages() {
     });
     const issues = await res.json();
     
-    let count = 0;
     if (Array.isArray(issues)) {
       issues.forEach(issue => {
         try {
@@ -703,7 +711,6 @@ async function fetchOfflineMessages() {
             const list = document.getElementById('message-list');
             const secretScreen = document.getElementById('secret-screen');
             
-            // 隠し画面が開いていて、かつメッセージリストが表示状態（マスク解除時）の場合のみ即座に既読扱いにする
             const isSecretActive = secretScreen && !secretScreen.classList.contains('hidden');
             const isVisible = isSecretActive && list && !list.classList.contains('hidden-messages');
 
@@ -719,7 +726,6 @@ async function fetchOfflineMessages() {
             };
             saveAndRenderNewMessage(msgObj);
             
-            // 隠し画面を開いてメッセージを見ている場合のみ Issue を close 処理
             if (isVisible) {
               closeGitHubIssue(issue.number, token);
             }
