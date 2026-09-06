@@ -25,12 +25,16 @@ let activeCall = null;
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
 
+// トリガー設定の取得・保存（iOS互換処理）
 function getTriggerTapCount() {
-  return parseInt(localStorage.getItem('js_trigger_tap_count') || '1', 10);
+  const val = localStorage.getItem('js_trigger_tap_count');
+  return val ? parseInt(val, 10) : 1;
 }
 
 function setTriggerTapCount(count) {
-  localStorage.setItem('js_trigger_tap_count', count.toString());
+  try {
+    localStorage.setItem('js_trigger_tap_count', String(count));
+  } catch(e) {}
 }
 
 function getStoredMessages() {
@@ -51,6 +55,7 @@ function saveStoredMessages(messages) {
   return filtered;
 }
 
+// 初期化処理
 window.addEventListener('DOMContentLoaded', () => {
   setupJSIconTrigger();
 
@@ -158,6 +163,7 @@ function setupConnectionEvents() {
   });
 }
 
+// ================= 青い「JS」アイコンタップ判定（iPhone最適化） =================
 function setupJSIconTrigger() {
   const icon = document.getElementById('js-icon-trigger');
   if (!icon) return;
@@ -165,7 +171,7 @@ function setupJSIconTrigger() {
   let tapCount = 0;
   let tapTimer = null;
 
-  icon.addEventListener('click', (e) => {
+  const handleTap = (e) => {
     e.preventDefault();
     const requiredTaps = getTriggerTapCount();
     tapCount++;
@@ -180,9 +186,20 @@ function setupJSIconTrigger() {
         tapCount = 0;
       }, 600);
     }
+  };
+
+  icon.addEventListener('touchend', (e) => {
+    handleTap(e);
+  });
+  
+  icon.addEventListener('click', (e) => {
+    if (!('ontouchstart' in window)) {
+      handleTap(e);
+    }
   });
 }
 
+// ================= Commit Changes ボタン（1回/3回切り替え設定） =================
 function showDummyCommitToast() {
   const current = getTriggerTapCount();
   const next = current === 1 ? 3 : 1;
@@ -648,7 +665,7 @@ function toggleStampPalette() {
 async function startCall() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const call = peer.call(targetRole, stream);
+    call.answer(stream);
     handleStream(call);
   } catch (err) {
     alert('マイクのアクセス許可が必要です');
