@@ -255,6 +255,7 @@ function clearPartnerUnreadState() {
   const now = Date.now();
 
   messages = messages.map(m => {
+    // 相手から届いた未読メッセージのみを既読にする（自分のメッセージには触れない）
     if (m.sender === 'partner' && !m.isRead) {
       m.isRead = true;
       m.readAt = now;
@@ -310,6 +311,7 @@ function toggleMessageVisibility() {
     }
     if (btn) btn.innerText = '🙈';
     
+    // 相手からのメッセージのみ既読化
     clearPartnerUnreadState();
     if (activeConn && activeConn.open) {
       activeConn.send({ type: 'read_ack_all' });
@@ -521,7 +523,15 @@ function renderSingleMessage(m) {
   const list = document.getElementById('message-list');
   if (!list) return;
 
-  if (document.querySelector(`[data-id="${m.id}"]`)) return;
+  const existing = document.querySelector(`[data-id="${m.id}"]`);
+  if (existing) {
+    // 既読状態のテキスト表示の更新のみ行う
+    if (m.sender === 'me') {
+      const statusElem = existing.querySelector('.read-status-text');
+      if (statusElem) statusElem.innerText = m.isRead ? '既読' : '未読';
+    }
+    return;
+  }
 
   const msgContainer = document.createElement('div');
   const className = m.sender === 'me' ? 'my-msg' : 'partner-msg';
@@ -553,13 +563,14 @@ function escapeHtml(str) {
   return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
-// 相手からの既読通知（read_ack）を受け取った時だけ「既読」状態へ変更する
+// 相手からの既読通知（read_ack）を受け取った時だけ「自分のメッセージ」を既読状態へ変更する
 function markMyMessagesAsRead(targetId = null) {
   let messages = getStoredMessages();
   let updated = false;
   const now = Date.now();
 
   messages = messages.map(m => {
+    // 厳格に自分のメッセージ（sender === 'me'）のみ判定
     if (m.sender === 'me' && (!targetId || m.id === targetId)) {
       if (!m.isRead) {
         m.isRead = true;
@@ -572,8 +583,12 @@ function markMyMessagesAsRead(targetId = null) {
 
   if (updated) {
     saveStoredMessages(messages);
-    document.querySelectorAll('.my-msg .read-status-text').forEach(elem => {
-      elem.innerText = '既読';
+    document.querySelectorAll('.my-msg').forEach(elem => {
+      const msgId = elem.getAttribute('data-id');
+      if (!targetId || msgId === targetId) {
+        const statusElem = elem.querySelector('.read-status-text');
+        if (statusElem) statusElem.innerText = '既読';
+      }
     });
   }
   updateUnreadBadgeCount();
