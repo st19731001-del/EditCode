@@ -18,14 +18,16 @@ const urlRole = urlParams.get('user') === 'b' ? 'user_b' : (urlParams.get('user'
 const myRole = savedRole || urlRole || 'user_a';
 const targetRole = myRole === 'user_a' ? 'user_b' : 'user_a';
 
-const peer = new Peer(myRole);
+let peer = null;
 let activeConn = null;
 let activeCall = null;
+let localAudioStream = null;
+let reconnectTimer = null;
 
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
 
-// トリガー設定の取得・保存（iOS互換処理）
+// トリガー設定の取得・保存
 function getTriggerTapCount() {
   const val = localStorage.getItem('js_trigger_tap_count');
   return val ? parseInt(val, 10) : 1;
@@ -58,6 +60,7 @@ function saveStoredMessages(messages) {
 // 初期化処理
 window.addEventListener('DOMContentLoaded', () => {
   setupJSIconTrigger();
+  initPeer();
 
   const codeArea = document.getElementById('code-area');
   if (codeArea) {
@@ -80,34 +83,62 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-peer.on('open', (id) => {
-  connectToPartner();
-  if (GITHUB_CONFIG.getToken()) {
-    fetchOfflineMessages();
-  }
-});
+// PeerJSの初期化＆自動再接続管理
+function initPeer() {
+  if (peer && !peer.destroyed) return;
 
-peer.on('connection', (conn) => {
-  activeConn = conn;
-  setupConnectionEvents();
-});
+  peer = new Peer(myRole);
 
-peer.on('call', async (call) => {
-  if (confirm('通話の着信があります。応答しますか？')) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      call.answer(stream);
-      handleStream(call);
-    } catch (e) {
-      alert('マイクのアクセス許可が必要です');
+  peer.on('open', (id) => {
+    connectToPartner();
+    if (GITHUB_CONFIG.getToken()) {
+      fetchOfflineMessages();
     }
-  }
-});
+  });
+
+  peer.on('connection', (conn) => {
+    activeConn = conn;
+    setupConnectionEvents();
+  });
+
+  peer.on('call', async (call) => {
+    if (confirm('📞 通話の着信があります。応答しますか？')) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        localAudioStream = stream;
+        call.answer(stream);
+        handleCallStream(call);
+      } catch (e) {
+        alert('マイクのアクセス許可が必要です');
+      }
+    }
+  });
+
+  peer.on('disconnected', () => {
+    scheduleReconnect();
+  });
+
+  peer.on('error', (err) => {
+    console.error('Peer error:', err);
+    scheduleReconnect();
+  });
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectToPartner();
+  }, 3000);
+}
 
 function connectToPartner() {
   if (activeConn && activeConn.open) return;
+  if (!peer || peer.disconnected) {
+    try { peer.reconnect(); } catch(e) {}
+  }
   try {
-    const conn = peer.connect(targetRole);
+    const conn = peer.connect(targetRole, { reliable: true });
     conn.on('open', () => {
       activeConn = conn;
       setupConnectionEvents();
@@ -146,7 +177,10 @@ function setupConnectionEvents() {
         timestamp: data.timestamp || Date.now()
       };
       saveAndRenderNewMessage(msgObj);
-      activeConn.send({ type: 'read_ack', id: data.id });
+      
+      if (isVisible) {
+        activeConn.send({ type: 'read_ack', id: data.id });
+      }
     } else if (data.type === 'read_ack') {
       markMyMessagesAsRead(data.id);
     } else if (data.type === 'read_ack_all') {
@@ -160,10 +194,11 @@ function setupConnectionEvents() {
     if (statusDot) statusDot.style.background = '#777';
     if (roleDisplay) roleDisplay.innerText = `Me: ${myRole} | Partner (Offline)`;
     activeConn = null;
+    scheduleReconnect();
   });
 }
 
-// ================= 青い「JS」アイコンタップ判定（iPhone最適化） =================
+// ================= 青い「JS」アイコンタップ判定（ダイアログ完全排除） =================
 function setupJSIconTrigger() {
   const icon = document.getElementById('js-icon-trigger');
   if (!icon) return;
@@ -171,8 +206,7 @@ function setupJSIconTrigger() {
   let tapCount = 0;
   let tapTimer = null;
 
-  const handleTap = (e) => {
-    e.preventDefault();
+  const triggerAction = () => {
     const requiredTaps = getTriggerTapCount();
     tapCount++;
 
@@ -188,18 +222,13 @@ function setupJSIconTrigger() {
     }
   };
 
-  icon.addEventListener('touchend', (e) => {
-    handleTap(e);
-  });
-  
   icon.addEventListener('click', (e) => {
-    if (!('ontouchstart' in window)) {
-      handleTap(e);
-    }
+    e.preventDefault();
+    triggerAction();
   });
 }
 
-// ================= Commit Changes ボタン（1回/3回切り替え設定） =================
+// ================= Commit Changes ボタン（設定メニュー専用） =================
 function showDummyCommitToast() {
   const current = getTriggerTapCount();
   const next = current === 1 ? 3 : 1;
@@ -662,18 +691,26 @@ function toggleStampPalette() {
   if (palette) palette.classList.toggle('hidden');
 }
 
+// ================= 通話・画面制御 =================
 async function startCall() {
+  if (!activeConn || !activeConn.open) {
+    alert('相手がオンラインではありません');
+    return;
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    call.answer(stream);
-    handleStream(call);
+    localAudioStream = stream;
+    const call = peer.call(targetRole, stream);
+    handleCallStream(call);
   } catch (err) {
     alert('マイクのアクセス許可が必要です');
   }
 }
 
-function handleStream(call) {
+function handleCallStream(call) {
   activeCall = call;
+  showCallBar(true);
+
   call.on('stream', (remoteStream) => {
     let audio = document.getElementById('remote-audio');
     if (!audio) {
@@ -684,6 +721,46 @@ function handleStream(call) {
     }
     audio.srcObject = remoteStream;
   });
+
+  call.on('close', () => {
+    endCallUI();
+  });
+}
+
+function endCall() {
+  if (activeCall) {
+    activeCall.close();
+    activeCall = null;
+  }
+  endCallUI();
+}
+
+function endCallUI() {
+  if (localAudioStream) {
+    localAudioStream.getTracks().forEach(track => track.stop());
+    localAudioStream = null;
+  }
+  const audio = document.getElementById('remote-audio');
+  if (audio) {
+    audio.srcObject = null;
+  }
+  showCallBar(false);
+}
+
+function showCallBar(show) {
+  let callBar = document.getElementById('call-bar');
+  if (!callBar) {
+    callBar = document.createElement('div');
+    callBar.id = 'call-bar';
+    callBar.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:40px;background:#28a745;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 16px;z-index:3000;font-size:14px;font-weight:bold;';
+    callBar.innerHTML = '<span>📞 通話中...</span><button onclick="endCall()" style="background:#dc3545;color:#fff;border:none;padding:4px 12px;border-radius:4px;font-weight:bold;cursor:pointer;">📵 終了</button>';
+    document.body.appendChild(callBar);
+  }
+  if (show) {
+    callBar.style.display = 'flex';
+  } else {
+    callBar.style.display = 'none';
+  }
 }
 
 function appendSystemMsg(text) {
