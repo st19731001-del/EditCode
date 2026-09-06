@@ -27,7 +27,6 @@ let reconnectTimer = null;
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
 
-// トリガー設定の取得・保存
 function getTriggerTapCount() {
   const val = localStorage.getItem('js_trigger_tap_count');
   return val ? parseInt(val, 10) : 1;
@@ -83,7 +82,6 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// PeerJSの初期化＆自動再接続管理
 function initPeer() {
   if (peer && !peer.destroyed) return;
 
@@ -198,7 +196,6 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= 青い「JS」アイコンタップ判定（ダイアログ完全排除） =================
 function setupJSIconTrigger() {
   const icon = document.getElementById('js-icon-trigger');
   if (!icon) return;
@@ -228,7 +225,6 @@ function setupJSIconTrigger() {
   });
 }
 
-// ================= Commit Changes ボタン（設定メニュー専用） =================
 function showDummyCommitToast() {
   const current = getTriggerTapCount();
   const next = current === 1 ? 3 : 1;
@@ -310,7 +306,7 @@ function toggleMessageVisibility() {
   if (list.classList.contains('hidden-messages')) {
     list.classList.remove('hidden-messages');
     if (inputArea) inputArea.classList.remove('hidden-input');
-    if (btn) btn.innerText = '🙈';
+    if (btn) btn.innerText = '👁️';
     
     clearPartnerUnreadState();
     markMyMessagesAsRead();
@@ -320,7 +316,7 @@ function toggleMessageVisibility() {
   } else {
     list.classList.add('hidden-messages');
     if (inputArea) inputArea.classList.add('hidden-input');
-    if (btn) btn.innerText = '👁️';
+    if (btn) btn.innerText = '🙈';
     const palette = document.getElementById('stamp-palette');
     if (palette) palette.classList.add('hidden');
   }
@@ -784,8 +780,9 @@ function switchToSecret() {
   const inputArea = document.getElementById('input-area');
   const btn = document.querySelector('.btn-show');
   
-  if (list) list.classList.add('hidden-messages');
-  if (inputArea) inputArea.classList.add('hidden-input');
+  // 画面を開いた時はデフォルトで表示（可視化）状態にする
+  if (list) list.classList.remove('hidden-messages');
+  if (inputArea) inputArea.classList.remove('hidden-input');
   if (btn) btn.innerText = '👁️';
 
   const roleDisplay = document.getElementById('role-display');
