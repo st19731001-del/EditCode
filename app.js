@@ -42,13 +42,13 @@ function getStoredMessages() {
   }
 }
 
-// 既読後24時間経過したメッセージを自動消去
+// 既読後1時間経過したメッセージを自動消去（24時間から1時間に変更）
 function saveStoredMessages(messages) {
   const now = Date.now();
-  const twentyFourHours = 24 * 60 * 60 * 1000;
+  const oneHour = 1 * 60 * 60 * 1000; // 1時間（ミリ秒）
   
   const filtered = messages.filter(m => {
-    if (m.isRead && m.readAt && (now - m.readAt) > twentyFourHours) {
+    if (m.isRead && m.readAt && (now - m.readAt) > oneHour) {
       return false;
     }
     return true;
@@ -866,7 +866,6 @@ async function fetchOfflineMessages() {
             };
             saveAndRenderNewMessage(msgObj);
             
-            // 裏画面が開いている場合は一括で Issue を close キューに追加
             if (isSecretActive) {
               closePromises.push(closeGitHubIssue(issue.number, token));
             }
@@ -893,7 +892,8 @@ async function closeGitHubIssue(issueNumber, token) {
       method: 'PATCH',
       headers: {
         'Authorization': `token ${token}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'User-Agent': 'P2P-Chat-App'
       },
       body: JSON.stringify({ state: 'closed' })
     });
