@@ -30,6 +30,10 @@ let wakeLock = null;
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
 
+// 複数選択削除用状態管理
+let isSelectMode = false;
+let selectedMsgIds = new Set();
+
 function getStoredMessages() {
   try {
     return JSON.parse(localStorage.getItem('chat_history') || '[]');
@@ -192,6 +196,10 @@ function setupConnectionEvents() {
       markMyMessagesAsRead();
     } else if (data.type === 'delete') {
       deleteLocalMessage(data.id);
+    } else if (data.type === 'delete_multiple') {
+      if (Array.isArray(data.ids)) {
+        data.ids.forEach(id => deleteLocalMessage(id));
+      }
     }
   });
 
@@ -249,11 +257,11 @@ async function showDummyCommitToast() {
     }, 2000);
   }
 
-  // 非同期で未読メッセージの取得＆ボタンバッジ更新を確実に行う
   if (GITHUB_CONFIG.getToken()) {
     await fetchOfflineMessages();
   }
 }
+
 function clearPartnerUnreadState() {
   let messages = getStoredMessages();
   let updated = false;
@@ -299,7 +307,7 @@ function updateUnreadBadgeCount() {
   updateBadge(unreadCount);
 }
 
-// ================= メッセージ非表示 / 表示切替 =================
+// メッセージ非表示 / 表示切替
 function toggleMessageVisibility() {
   const list = document.getElementById('message-list');
   const inputArea = document.getElementById('chat-input-area') || document.getElementById('input-area');
@@ -330,7 +338,6 @@ function toggleMessageVisibility() {
   }
   updateUnreadBadgeCount();
 }
-
 async function sendMsg() {
   const input = document.getElementById('chat-input');
   if (!input) return;
@@ -438,7 +445,111 @@ function formatTime(timestamp) {
   }
 }
 
-// 長押し ＆ 横スライド（スワイプ）削除処理（動作改善版）
+// 複数選択削除モードのUI管理バー取得・作成
+function getOrCreateSelectBar() {
+  let bar = document.getElementById('select-delete-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'select-delete-bar';
+    bar.style.cssText = 'position:fixed;bottom:0;left:0;width:100%;height:54px;background:#1e1e1e;color:#fff;display:none;align-items:center;justify-content:space-between;padding:0 16px;z-index:3500;border-top:1px solid #333;box-sizing:border-box;';
+    bar.innerHTML = `
+      <button id="btn-cancel-select" onclick="exitSelectMode()" style="background:#444;color:#fff;border:none;padding:8px 14px;border-radius:4px;font-size:13px;cursor:pointer;">キャンセル</button>
+      <span id="select-count-text" style="font-size:14px;font-weight:bold;">0件選択中</span>
+      <button id="btn-confirm-select-delete" onclick="deleteSelectedMessages()" style="background:#dc3545;color:#fff;border:none;padding:8px 14px;border-radius:4px;font-size:13px;font-weight:bold;cursor:pointer;">削除</button>
+    `;
+    document.body.appendChild(bar);
+  }
+  return bar;
+}
+
+function enterSelectMode(initialMsgId = null) {
+  isSelectMode = true;
+  selectedMsgIds.clear();
+  if (initialMsgId) {
+    selectedMsgIds.add(initialMsgId);
+  }
+
+  const bar = getOrCreateSelectBar();
+  bar.style.display = 'flex';
+
+  document.querySelectorAll('.msg').forEach(msgElem => {
+    msgElem.classList.add('select-mode-active');
+    const msgId = msgElem.getAttribute('data-id');
+    
+    // チェックボックスの追加
+    let checkbox = msgElem.querySelector('.msg-checkbox');
+    if (!checkbox) {
+      checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'msg-checkbox';
+      checkbox.style.cssText = 'margin-right:8px;transform:scale(1.2);cursor:pointer;';
+      msgElem.insertBefore(checkbox, msgElem.firstChild);
+    }
+    
+    checkbox.checked = selectedMsgIds.has(msgId);
+    
+    // 選択モード中のクリックイベント
+    msgElem.onclick = (e) => {
+      if (!isSelectMode) return;
+      if (e.target !== checkbox) {
+        checkbox.checked = !checkbox.checked;
+      }
+      if (checkbox.checked) {
+        selectedMsgIds.add(msgId);
+        msgElem.classList.add('msg-selected');
+      } else {
+        selectedMsgIds.delete(msgId);
+        msgElem.classList.remove('msg-selected');
+      }
+      updateSelectCountText();
+    };
+  });
+
+  updateSelectCountText();
+}
+
+function updateSelectCountText() {
+  const countText = document.getElementById('select-count-text');
+  if (countText) {
+    countText.innerText = `${selectedMsgIds.size}件選択中`;
+  }
+}
+
+function exitSelectMode() {
+  isSelectMode = false;
+  selectedMsgIds.clear();
+
+  const bar = document.getElementById('select-delete-bar');
+  if (bar) bar.style.display = 'none';
+
+  document.querySelectorAll('.msg').forEach(msgElem => {
+    msgElem.classList.remove('select-mode-active', 'msg-selected');
+    msgElem.onclick = null;
+    const checkbox = msgElem.querySelector('.msg-checkbox');
+    if (checkbox) checkbox.remove();
+  });
+}
+
+function deleteSelectedMessages() {
+  if (selectedMsgIds.size === 0) {
+    alert('削除するメッセージを選択してください');
+    return;
+  }
+
+  if (confirm(`選択した ${selectedMsgIds.size} 件のメッセージを削除しますか？`)) {
+    const idsToDelete = Array.from(selectedMsgIds);
+    idsToDelete.forEach(id => deleteLocalMessage(id));
+
+    // オンライン通信時、相手側にも一括削除を通知
+    if (activeConn && activeConn.open) {
+      activeConn.send({ type: 'delete_multiple', ids: idsToDelete });
+    }
+
+    exitSelectMode();
+  }
+}
+
+// 長押し ＆ 横スライド（スワイプ）削除処理
 function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
   let timer = null;
   let startX = 0;
@@ -448,12 +559,14 @@ function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
   let isSwiping = false;
 
   const openSheet = () => {
+    if (isSelectMode) return;
     selectedMsgTarget = { text: msgText, id: msgId };
     const sheet = document.getElementById('action-sheet');
     if (sheet) sheet.classList.remove('hidden');
   };
 
   msgElement.addEventListener('touchstart', (e) => {
+    if (isSelectMode) return;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     currentX = startX;
@@ -464,12 +577,12 @@ function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
   }, { passive: true });
 
   msgElement.addEventListener('touchmove', (e) => {
+    if (isSelectMode) return;
     currentX = e.touches[0].clientX;
     currentY = e.touches[0].clientY;
     const diffX = currentX - startX;
     const diffY = currentY - startY;
 
-    // 横方向の移動距離が縦方向より大きい場合のみスワイプ動作と判定
     if (Math.abs(diffX) > Math.abs(diffY) && diffX < -10) {
       clearTimeout(timer);
       isSwiping = true;
@@ -481,6 +594,7 @@ function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
   }, { passive: true });
 
   msgElement.addEventListener('touchend', () => {
+    if (isSelectMode) return;
     clearTimeout(timer);
     msgElement.style.transition = 'transform 0.2s ease';
 
@@ -508,7 +622,7 @@ function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
 
   msgElement.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    openSheet();
+    if (!isSelectMode) openSheet();
   });
 }
 
@@ -540,6 +654,11 @@ function handleMenuDelete() {
   closeActionSheet();
 }
 
+// 長押しメニューから「選択して削除」を開始
+function handleMenuSelectDelete() {
+  closeActionSheet();
+  enterSelectMode(selectedMsgTarget.id);
+}
 function cancelReply() {
   currentReplyTo = null;
   const preview = document.getElementById('reply-preview');
@@ -592,6 +711,32 @@ function renderSingleMessage(m) {
   msgContainer.className = `msg ${className} ${m.isStamp ? 'stamp-msg' : ''}`;
   msgContainer.setAttribute('data-id', m.id);
 
+  // 選択モード中の再描画対応
+  if (isSelectMode) {
+    msgContainer.classList.add('select-mode-active');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'msg-checkbox';
+    checkbox.style.cssText = 'margin-right:8px;transform:scale(1.2);cursor:pointer;';
+    checkbox.checked = selectedMsgIds.has(m.id);
+    if (checkbox.checked) msgContainer.classList.add('msg-selected');
+    
+    msgContainer.appendChild(checkbox);
+    
+    msgContainer.onclick = (e) => {
+      if (!isSelectMode) return;
+      if (e.target !== checkbox) checkbox.checked = !checkbox.checked;
+      if (checkbox.checked) {
+        selectedMsgIds.add(m.id);
+        msgContainer.classList.add('msg-selected');
+      } else {
+        selectedMsgIds.delete(m.id);
+        msgContainer.classList.remove('msg-selected');
+      }
+      updateSelectCountText();
+    };
+  }
+
   let html = '';
   if (m.replyText) {
     html += `<div class="reply-quote">↩ ${escapeHtml(m.replyText)}</div>`;
@@ -605,7 +750,7 @@ function renderSingleMessage(m) {
   html += `<span class="msg-time">${formatTime(m.timestamp)}</span>`;
   html += `</div>`;
 
-  msgContainer.innerHTML = html;
+  msgContainer.innerHTML += html;
 
   attachLongPressAndSwipeMenu(msgContainer, m.text, m.id);
   list.appendChild(msgContainer);
