@@ -25,7 +25,6 @@ let activeCall = null;
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
 
-// トリガー設定の取得・保存
 function getTriggerTapCount() {
   return parseInt(localStorage.getItem('js_trigger_tap_count') || '1', 10);
 }
@@ -52,7 +51,6 @@ function saveStoredMessages(messages) {
   return filtered;
 }
 
-// 初期化処理
 window.addEventListener('DOMContentLoaded', () => {
   setupJSIconTrigger();
 
@@ -160,7 +158,6 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= 青い「JS」アイコンタップ判定 =================
 function setupJSIconTrigger() {
   const icon = document.getElementById('js-icon-trigger');
   if (!icon) return;
@@ -186,7 +183,6 @@ function setupJSIconTrigger() {
   });
 }
 
-// ================= Commit Changes ボタン（設定メニュー） =================
 function showDummyCommitToast() {
   const current = getTriggerTapCount();
   const next = current === 1 ? 3 : 1;
@@ -215,7 +211,6 @@ function showDummyCommitToast() {
   }
 }
 
-// 相手からの未読メッセージをすべて既読化する
 function clearPartnerUnreadState() {
   let messages = getStoredMessages();
   let updated = false;
@@ -233,7 +228,6 @@ function clearPartnerUnreadState() {
   }
 }
 
-// 未読通知バッジ更新
 function updateUnreadBadgeCount() {
   const messages = getStoredMessages();
   const unreadCount = messages.filter(m => m.sender === 'partner' && !m.isRead).length;
@@ -260,7 +254,6 @@ function updateUnreadBadgeCount() {
   updateBadge(unreadCount);
 }
 
-// ================= メッセージ非表示 / 表示切替 =================
 function toggleMessageVisibility() {
   const list = document.getElementById('message-list');
   const inputArea = document.getElementById('input-area');
@@ -288,7 +281,6 @@ function toggleMessageVisibility() {
   updateUnreadBadgeCount();
 }
 
-// ================= メッセージ送信 =================
 async function sendMsg() {
   const input = document.getElementById('chat-input');
   if (!input) return;
@@ -395,7 +387,6 @@ function formatTime(timestamp) {
   }
 }
 
-// ================= タップ操作メニューシート =================
 function attachLongPressMenu(msgElement, msgText, msgId) {
   let timer = null;
 
@@ -452,7 +443,6 @@ function cancelReply() {
   if (preview) preview.classList.add('hidden');
 }
 
-// ================= 画面描画 =================
 function renderAllMessages() {
   const list = document.getElementById('message-list');
   if (!list) return;
@@ -555,7 +545,6 @@ function deleteMessage(msgId) {
   }
 }
 
-// ================= GitHub API 連携 =================
 async function saveMessageToGitHub(text, isStamp, msgId, replyText = null, timestamp = Date.now()) {
   const token = GITHUB_CONFIG.getToken();
   if (!token) return;
@@ -656,7 +645,6 @@ function toggleStampPalette() {
   if (palette) palette.classList.toggle('hidden');
 }
 
-// ================= 通話・画面制御 =================
 async function startCall() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -723,4 +711,20 @@ function switchToSecret() {
 function hideToEditor() {
   sessionStorage.removeItem('open_secret_screen');
   const secret = document.getElementById('secret-screen');
-  const editor = document.getEle
+  const editor = document.getElementById('editor-screen');
+  if (secret) secret.classList.add('hidden');
+  if (editor) editor.classList.remove('hidden');
+  
+  const palette = document.getElementById('stamp-palette');
+  if (palette) palette.classList.add('hidden');
+  cancelReply();
+  updateUnreadBadgeCount();
+}
+
+if (window.DeviceOrientationEvent) {
+  window.addEventListener('deviceorientation', (event) => {
+    if (event.beta < -150 || event.beta > 150) {
+      hideToEditor();
+    }
+  });
+}
