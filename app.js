@@ -311,7 +311,6 @@ function toggleMessageVisibility() {
     if (btn) btn.innerText = '🙈';
     
     clearPartnerUnreadState();
-    markMyMessagesAsRead();
     if (activeConn && activeConn.open) {
       activeConn.send({ type: 'read_ack_all' });
     }
@@ -390,7 +389,7 @@ async function dispatchMessage(text, isStamp = false) {
   const isOnline = activeConn && activeConn.open;
   const now = Date.now();
   
-  // 送信時は必ず「未読（isRead: false）」で保存・送信
+  // 送信時は相手の確認通知を受けるまで厳格に isRead = false に固定
   const msgObj = {
     id: msgId,
     text: text,
@@ -554,6 +553,7 @@ function escapeHtml(str) {
   return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
+// 相手からの既読通知（read_ack）を受け取った時だけ「既読」状態へ変更する
 function markMyMessagesAsRead(targetId = null) {
   let messages = getStoredMessages();
   let updated = false;
@@ -563,7 +563,7 @@ function markMyMessagesAsRead(targetId = null) {
     if (m.sender === 'me' && (!targetId || m.id === targetId)) {
       if (!m.isRead) {
         m.isRead = true;
-        m.readAt = now; // 相手に読まれたタイミングで既読日時を割り当て
+        m.readAt = now;
         updated = true;
       }
     }
