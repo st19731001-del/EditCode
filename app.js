@@ -172,8 +172,8 @@ function setupConnectionEvents() {
 
   activeConn.on('data', (data) => {
     if (data.type === 'chat') {
-      const list = document.getElementById('message-list');
-      const isVisible = list && !list.classList.contains('hidden-messages');
+      const secretScreen = document.getElementById('secret-screen');
+      const isSecretActive = secretScreen && !secretScreen.classList.contains('hidden');
       
       const msgObj = {
         id: data.id,
@@ -181,13 +181,13 @@ function setupConnectionEvents() {
         replyText: data.replyText || null,
         sender: 'partner',
         isStamp: data.isStamp,
-        isRead: isVisible,
-        readAt: isVisible ? Date.now() : null,
+        isRead: isSecretActive,
+        readAt: isSecretActive ? Date.now() : null,
         timestamp: data.timestamp || Date.now()
       };
       saveAndRenderNewMessage(msgObj);
       
-      if (isVisible) {
+      if (isSecretActive) {
         activeConn.send({ type: 'read_ack', id: data.id });
       }
     } else if (data.type === 'read_ack') {
@@ -246,7 +246,7 @@ function setupJSIconTrigger() {
   icon.addEventListener('click', handleTap);
 }
 
-// Commit Changes ボタン（ダミー成功トースト＋未読確認）
+// Commit Changes ボタン（ダミー成功トースト＋未読高速チェック）
 async function showDummyCommitToast() {
   const toast = document.getElementById('dummy-toast');
   if (toast) {
@@ -838,7 +838,7 @@ async function fetchOfflineMessages() {
   if (!token) return;
 
   try {
-    const res = await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues?labels=offline-msg&state=open`, {
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues?labels=offline-msg&state=open&per_page=100`, {
       headers: { 'Authorization': `token ${token}` }
     });
     
@@ -846,36 +846,38 @@ async function fetchOfflineMessages() {
     const issues = await res.json();
     
     if (Array.isArray(issues)) {
-      for (const issue of issues) {
+      const secretScreen = document.getElementById('secret-screen');
+      const isSecretActive = secretScreen && !secretScreen.classList.contains('hidden');
+      const closePromises = [];
+
+      issues.forEach(issue => {
         try {
           const data = JSON.parse(issue.body);
           if (data && data.target === myRole) {
-            const list = document.getElementById('message-list');
-            const secretScreen = document.getElementById('secret-screen');
-            
-            const isSecretActive = secretScreen && !secretScreen.classList.contains('hidden');
-            const isVisible = isSecretActive && list && !list.classList.contains('hidden-messages');
-
             const msgObj = {
               id: data.id,
               text: data.text,
               replyText: data.replyText || null,
               sender: 'partner',
               isStamp: data.isStamp,
-              isRead: isVisible,
-              readAt: isVisible ? Date.now() : null,
+              isRead: isSecretActive,
+              readAt: isSecretActive ? Date.now() : null,
               timestamp: data.timestamp || Date.now()
             };
             saveAndRenderNewMessage(msgObj);
             
-            // 隠し画面を開いて目視確認したタイミングで Issue を close する
-            if (isVisible) {
-              await closeGitHubIssue(issue.number, token);
+            // 裏画面が開いている場合は一括で Issue を close キューに追加
+            if (isSecretActive) {
+              closePromises.push(closeGitHubIssue(issue.number, token));
             }
           }
         } catch (e) {
           console.error('Issueパースエラー:', e);
         }
+      });
+
+      if (closePromises.length > 0) {
+        Promise.all(closePromises).catch(err => console.error('一括Issueクローズエラー:', err));
       }
     }
 
