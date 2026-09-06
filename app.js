@@ -445,7 +445,7 @@ function formatTime(timestamp) {
   }
 }
 
-// 複数選択削除モードのUI管理バー取得・作成
+// 複数選択削除用UIバーの生成・取得
 function getOrCreateSelectBar() {
   let bar = document.getElementById('select-delete-bar');
   if (!bar) {
@@ -476,7 +476,6 @@ function enterSelectMode(initialMsgId = null) {
     msgElem.classList.add('select-mode-active');
     const msgId = msgElem.getAttribute('data-id');
     
-    // チェックボックスの追加
     let checkbox = msgElem.querySelector('.msg-checkbox');
     if (!checkbox) {
       checkbox = document.createElement('input');
@@ -488,7 +487,6 @@ function enterSelectMode(initialMsgId = null) {
     
     checkbox.checked = selectedMsgIds.has(msgId);
     
-    // 選択モード中のクリックイベント
     msgElem.onclick = (e) => {
       if (!isSelectMode) return;
       if (e.target !== checkbox) {
@@ -540,7 +538,6 @@ function deleteSelectedMessages() {
     const idsToDelete = Array.from(selectedMsgIds);
     idsToDelete.forEach(id => deleteLocalMessage(id));
 
-    // オンライン通信時、相手側にも一括削除を通知
     if (activeConn && activeConn.open) {
       activeConn.send({ type: 'delete_multiple', ids: idsToDelete });
     }
@@ -654,7 +651,6 @@ function handleMenuDelete() {
   closeActionSheet();
 }
 
-// 長押しメニューから「選択して削除」を開始
 function handleMenuSelectDelete() {
   closeActionSheet();
   enterSelectMode(selectedMsgTarget.id);
@@ -711,7 +707,6 @@ function renderSingleMessage(m) {
   msgContainer.className = `msg ${className} ${m.isStamp ? 'stamp-msg' : ''}`;
   msgContainer.setAttribute('data-id', m.id);
 
-  // 選択モード中の再描画対応
   if (isSelectMode) {
     msgContainer.classList.add('select-mode-active');
     const checkbox = document.createElement('input');
@@ -843,16 +838,18 @@ async function fetchOfflineMessages() {
   if (!token) return;
 
   try {
-    const res = await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues?labels=offline-msg`, {
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues?labels=offline-msg&state=open`, {
       headers: { 'Authorization': `token ${token}` }
     });
+    
+    if (!res.ok) return;
     const issues = await res.json();
     
     if (Array.isArray(issues)) {
-      issues.forEach(issue => {
+      for (const issue of issues) {
         try {
           const data = JSON.parse(issue.body);
-          if (data.target === myRole) {
+          if (data && data.target === myRole) {
             const list = document.getElementById('message-list');
             const secretScreen = document.getElementById('secret-screen');
             
@@ -871,12 +868,15 @@ async function fetchOfflineMessages() {
             };
             saveAndRenderNewMessage(msgObj);
             
+            // 隠し画面を開いて目視確認したタイミングで Issue を close する
             if (isVisible) {
-              closeGitHubIssue(issue.number, token);
+              await closeGitHubIssue(issue.number, token);
             }
           }
-        } catch (e) {}
-      });
+        } catch (e) {
+          console.error('Issueパースエラー:', e);
+        }
+      }
     }
 
     updateUnreadBadgeCount();
@@ -886,14 +886,18 @@ async function fetchOfflineMessages() {
 }
 
 async function closeGitHubIssue(issueNumber, token) {
-  await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues/${issueNumber}`, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `token ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ state: 'closed' })
-  });
+  try {
+    await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues/${issueNumber}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ state: 'closed' })
+    });
+  } catch(e) {
+    console.error('Issueクローズエラー:', e);
+  }
 }
 
 function updateBadge(count) {
