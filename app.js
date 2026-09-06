@@ -11,6 +11,8 @@ const GITHUB_CONFIG = {
   }
 };
 
+const SECRET_PIN = '904900'; // 秘密のアクセスコード
+
 const savedRole = localStorage.getItem('user_role');
 const urlParams = new URLSearchParams(window.location.search);
 const urlRole = urlParams.get('user') === 'b' ? 'user_b' : (urlParams.get('user') === 'a' ? 'user_a' : null);
@@ -23,6 +25,7 @@ let activeConn = null;
 let activeCall = null;
 let localAudioStream = null;
 let reconnectTimer = null;
+let wakeLock = null; // 画面スリープ防止用
 
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
@@ -35,10 +38,19 @@ function getStoredMessages() {
   }
 }
 
+// 既読後24時間経過したメッセージを自動消去するクリーニング処理
 function saveStoredMessages(messages) {
   const now = Date.now();
-  const threeDays = 3 * 24 * 60 * 60 * 1000;
-  const filtered = messages.filter(m => (now - m.timestamp) < threeDays);
+  const twentyFourHours = 24 * 60 * 60 * 1000;
+  
+  const filtered = messages.filter(m => {
+    // 既読メッセージかつ既読日時から24時間以上経過していれば削除
+    if (m.isRead && m.readAt && (now - m.readAt) > twentyFourHours) {
+      return false;
+    }
+    return true;
+  });
+
   try {
     localStorage.setItem('chat_history', JSON.stringify(filtered));
   } catch(e) {}
@@ -68,6 +80,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
   if (sessionStorage.getItem('open_secret_screen') === 'true') {
     switchToSecret();
+  }
+});
+
+// 画面消灯（省エネモード）やバックグラウンド移行時に表のテキストエディタ画面へ自動復帰
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    hideToEditor();
   }
 });
 
@@ -161,6 +180,7 @@ function setupConnectionEvents() {
         sender: 'partner',
         isStamp: data.isStamp,
         isRead: isVisible,
+        readAt: isVisible ? Date.now() : null, // 表示中なら即座に既読日時を記録
         timestamp: data.timestamp || Date.now()
       };
       saveAndRenderNewMessage(msgObj);
@@ -185,7 +205,7 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= 青い「JS」アイコンタップ判定（3回タップ固定） =================
+// ================= 青い「JS」アイコンタップ判定（3回タップ＋英語認証ダイアログ） =================
 function setupJSIconTrigger() {
   const icon = document.getElementById('js-icon-trigger');
   if (!icon) return;
@@ -198,14 +218,20 @@ function setupJSIconTrigger() {
 
     if (tapTimer) clearTimeout(tapTimer);
 
-    // 3回タップで隠し画面へ
     if (tapCount >= 3) {
       tapCount = 0;
-      switchToSecret();
+      
+      // 開発ツール風の英語認証ポップアップを表示
+      const inputPin = prompt('[System Maintenance]\nSecurity Verification Required:\n\nEnter Developer Authorization Code:');
+      if (inputPin === SECRET_PIN) {
+        switchToSecret();
+      } else if (inputPin !== null) {
+        alert('Access Denied: Invalid Authorization Code.');
+      }
     } else {
       tapTimer = setTimeout(() => {
         tapCount = 0;
-      }, 800); // 0.8秒以内に3回連続タップ
+      }, 800);
     }
   };
 
@@ -215,7 +241,7 @@ function setupJSIconTrigger() {
   });
 }
 
-// ================= Commit Changes ボタン（ダミーメッセージ表示） =================
+// ================= Commit Changes ボタン（ダミー成功トースト） =================
 function showDummyCommitToast() {
   const toast = document.getElementById('dummy-toast');
   if (toast) {
@@ -229,10 +255,12 @@ function showDummyCommitToast() {
 function clearPartnerUnreadState() {
   let messages = getStoredMessages();
   let updated = false;
+  const now = Date.now();
 
   messages = messages.map(m => {
     if (m.sender === 'partner' && !m.isRead) {
       m.isRead = true;
+      m.readAt = now; // 既読になった日時を記録
       updated = true;
     }
     return m;
@@ -244,7 +272,7 @@ function clearPartnerUnreadState() {
 }
 
 function updateUnreadBadgeCount() {
-  const messages = getStoredMessages();
+  const messages = saveStoredMessages(getStoredMessages());
   const unreadCount = messages.filter(m => m.sender === 'partner' && !m.isRead).length;
   
   const badgeElem = document.getElementById('unread-badge');
@@ -269,7 +297,7 @@ function updateUnreadBadgeCount() {
   updateBadge(unreadCount);
 }
 
-// ================= メッセージ非表示 / 表示切替（表示バグ修正） =================
+// ================= メッセージ非表示 / 表示切替 =================
 function toggleMessageVisibility() {
   const list = document.getElementById('message-list');
   const inputArea = document.getElementById('chat-input-area') || document.getElementById('input-area');
@@ -278,11 +306,10 @@ function toggleMessageVisibility() {
   if (!list) return;
 
   if (list.classList.contains('hidden-messages')) {
-    // 表示状態に戻す
     list.classList.remove('hidden-messages');
     if (inputArea) {
       inputArea.classList.remove('hidden-input');
-      inputArea.style.display = ''; // styleレベルでの非表示も確実に解除
+      inputArea.style.display = '';
     }
     if (btn) btn.innerText = '🙈';
     
@@ -292,7 +319,6 @@ function toggleMessageVisibility() {
       activeConn.send({ type: 'read_ack_all' });
     }
   } else {
-    // マスク（非表示）状態にする
     list.classList.add('hidden-messages');
     if (inputArea) {
       inputArea.classList.add('hidden-input');
@@ -374,6 +400,7 @@ async function dispatchMessage(text, isStamp = false) {
     sender: 'me',
     isStamp: isStamp,
     isRead: isOnline,
+    readAt: isOnline ? now : null, // オンラインで相手に届けば既読日時をセット
     timestamp: now
   };
 
@@ -532,11 +559,13 @@ function escapeHtml(str) {
 function markMyMessagesAsRead(targetId = null) {
   let messages = getStoredMessages();
   let updated = false;
+  const now = Date.now();
 
   messages = messages.map(m => {
     if (m.sender === 'me' && (!targetId || m.id === targetId)) {
       if (!m.isRead) {
         m.isRead = true;
+        m.readAt = now; // 相手に読まれた日時を記録
         updated = true;
       }
     }
@@ -626,6 +655,7 @@ async function fetchOfflineMessages() {
               sender: 'partner',
               isStamp: data.isStamp,
               isRead: isVisible,
+              readAt: isVisible ? Date.now() : null,
               timestamp: data.timestamp || Date.now()
             };
             saveAndRenderNewMessage(msgObj);
@@ -669,6 +699,24 @@ function toggleStampPalette() {
 }
 
 // ================= 通話・画面制御 =================
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+    }
+  } catch (err) {
+    console.log('WakeLock Error:', err);
+  }
+}
+
+function releaseWakeLock() {
+  if (wakeLock !== null) {
+    wakeLock.release().then(() => {
+      wakeLock = null;
+    });
+  }
+}
+
 async function startCall() {
   if (!activeConn || !activeConn.open) {
     alert('相手がオンラインではありません');
@@ -687,6 +735,7 @@ async function startCall() {
 function handleCallStream(call) {
   activeCall = call;
   showCallBar(true);
+  requestWakeLock(); // 通話開始：画面スリープ（省エネモード）を無効化
 
   call.on('stream', (remoteStream) => {
     let audio = document.getElementById('remote-audio');
@@ -713,6 +762,7 @@ function endCall() {
 }
 
 function endCallUI() {
+  releaseWakeLock(); // 通話終了：画面スリープ無効化を解除
   if (localAudioStream) {
     localAudioStream.getTracks().forEach(track => track.stop());
     localAudioStream = null;
@@ -761,7 +811,7 @@ function switchToSecret() {
   const inputArea = document.getElementById('chat-input-area') || document.getElementById('input-area');
   const btn = document.querySelector('.btn-show');
   
-  // 画面切り替え直後はメッセージと入力欄を非表示（マスク）状態にする
+  // 隠し画面切り替え時は非表示（マスク）スタート
   if (list) list.classList.add('hidden-messages');
   if (inputArea) inputArea.classList.add('hidden-input');
   if (btn) btn.innerText = '👁️';
