@@ -25,6 +25,15 @@ let activeCall = null;
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
 
+// タップ回数設定（デフォルト：1回タップ）
+function getTriggerTapCount() {
+  return parseInt(localStorage.getItem('js_trigger_tap_count') || '1', 10);
+}
+
+function setTriggerTapCount(count) {
+  localStorage.setItem('js_trigger_tap_count', count.toString());
+}
+
 function getStoredMessages() {
   try {
     return JSON.parse(localStorage.getItem('chat_history') || '[]');
@@ -46,6 +55,7 @@ function saveStoredMessages(messages) {
 // 初期化処理
 window.addEventListener('DOMContentLoaded', () => {
   setupJSIconTrigger();
+  requestNotificationPermission(); // 通知許可のリクエスト
 
   const codeArea = document.getElementById('code-area');
   if (codeArea) {
@@ -68,6 +78,13 @@ window.addEventListener('DOMContentLoaded', () => {
     switchToSecret();
   }
 });
+
+// 通知の許可リクエスト
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
 
 peer.on('open', (id) => {
   connectToPartner();
@@ -128,7 +145,7 @@ function setupConnectionEvents() {
         replyText: data.replyText || null,
         sender: 'partner',
         isStamp: data.isStamp,
-        isRead: true,
+        isRead: false,
         timestamp: data.timestamp || Date.now()
       };
       saveAndRenderNewMessage(msgObj);
@@ -149,14 +166,64 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= 青い「JS」アイコン 1回タップで隠し画面起動 =================
+// ================= 青い「JS」アイコン タップ＆長押し設定 =================
 function setupJSIconTrigger() {
   const icon = document.getElementById('js-icon-trigger');
   if (!icon) return;
 
+  let tapCount = 0;
+  let tapTimer = null;
+  let longPressTimer = null;
+  let isLongPress = false;
+
+  // --- 長押し判定 (長押しで設定変更) ---
+  const startLongPress = () => {
+    isLongPress = false;
+    longPressTimer = setTimeout(() => {
+      isLongPress = true;
+      const current = getTriggerTapCount();
+      const choice = confirm(`【設定変更】\n現在の起動条件：${current}回タップ\n\n「OK」を押すと【${current === 1 ? '3回' : '1回'}タップ】に変更します。`);
+      if (choice) {
+        const nextCount = current === 1 ? 3 : 1;
+        setTriggerTapCount(nextCount);
+        alert(`起動条件を【${nextCount}回タップ】に変更しました！`);
+      }
+    }, 800); // 0.8秒で長押し起動
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimer) clearTimeout(longPressTimer);
+  };
+
+  // タッチ・クリックイベントの設定
+  icon.addEventListener('touchstart', startLongPress, { passive: true });
+  icon.addEventListener('touchend', cancelLongPress);
+  icon.addEventListener('touchmove', cancelLongPress);
+
+  icon.addEventListener('mousedown', startLongPress);
+  icon.addEventListener('mouseup', cancelLongPress);
+
+  // --- タップカウント判定 ---
   icon.addEventListener('click', (e) => {
     e.preventDefault();
-    switchToSecret();
+    if (isLongPress) {
+      isLongPress = false;
+      return;
+    }
+
+    const requiredTaps = getTriggerTapCount();
+    tapCount++;
+
+    if (tapTimer) clearTimeout(tapTimer);
+
+    if (tapCount >= requiredTaps) {
+      tapCount = 0;
+      switchToSecret();
+    } else {
+      tapTimer = setTimeout(() => {
+        tapCount = 0;
+      }, 600); // 0.6秒以内に次のタップがないとカウントリセット
+    }
   });
 }
 
@@ -182,7 +249,6 @@ function toggleMessageVisibility() {
     if (inputArea) inputArea.classList.remove('hidden-input');
     if (btn) btn.innerText = '🙈';
     
-    // 表示時に既読処理を実行
     markMyMessagesAsRead();
     if (activeConn && activeConn.open) {
       activeConn.send({ type: 'read_ack_all' });
@@ -286,7 +352,6 @@ async function dispatchMessage(text, isStamp = false) {
   }
 }
 
-// 日時フォーマット関数 (例: 14:25 / 9/6 14:25)
 function formatTime(timestamp) {
   if (!timestamp) return '';
   const date = new Date(timestamp);
@@ -304,7 +369,7 @@ function formatTime(timestamp) {
   }
 }
 
-// 未読丸数字バッジの更新
+// 未読丸数字バッジの更新（アプリ内＆PWAアイコン）
 function updateUnreadBadgeCount() {
   const messages = getStoredMessages();
   const unreadCount = messages.filter(m => m.sender === 'partner' && !m.isRead).length;
@@ -421,11 +486,10 @@ function renderSingleMessage(m) {
 
   let html = '';
   if (m.replyText) {
-    html += `<div class="reply-quote">↩ ${m.replyText}</div>`;
+    html += `<div class="reply-quote">↩ ${escapeHtml(m.replyText)}</div>`;
   }
   html += `<span class="msg-text">${escapeHtml(m.text)}</span>`;
   
-  // 送信日時および既読ステータス表示
   html += `<div class="msg-meta">`;
   if (m.sender === 'me') {
     html += `<span class="read-status-text">${m.isRead ? '既読' : '未読'}</span>`;
@@ -460,7 +524,6 @@ function markMyMessagesAsRead(targetId = null) {
 
   if (updated) {
     saveStoredMessages(messages);
-    // 画面上の既読表記をリアルタイム書き換え
     document.querySelectorAll('.my-msg .read-status-text').forEach(elem => {
       elem.innerText = '既読';
     });
@@ -658,10 +721,4 @@ function hideToEditor() {
   cancelReply();
 }
 
-if (window.DeviceOrientationEvent) {
-  window.addEventListener('deviceorientation', (event) => {
-    if (event.beta < -150 || event.beta > 150) {
-      hideToEditor();
-    }
-  });
-}
+if (wind
