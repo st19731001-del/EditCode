@@ -139,7 +139,7 @@ function setupConnectionEvents() {
         replyText: data.replyText || null,
         sender: 'partner',
         isStamp: data.isStamp,
-        isRead: isVisible, // 画面が表示中なら既読扱い、隠し中なら未読扱い
+        isRead: isVisible,
         timestamp: data.timestamp || Date.now()
       };
       saveAndRenderNewMessage(msgObj);
@@ -233,10 +233,9 @@ function clearPartnerUnreadState() {
   }
 }
 
-// 未読通知バッジ更新（アプリ内＆表画面通知）
+// 未読通知バッジ更新
 function updateUnreadBadgeCount() {
   const messages = getStoredMessages();
-  // 相手から届いたメッセージで、まだ読んでいないものだけをカウント
   const unreadCount = messages.filter(m => m.sender === 'partner' && !m.isRead).length;
   
   const badgeElem = document.getElementById('unread-badge');
@@ -274,7 +273,6 @@ function toggleMessageVisibility() {
     if (inputArea) inputArea.classList.remove('hidden-input');
     if (btn) btn.innerText = '🙈';
     
-    // 表示されたら相手の未読をクリア
     clearPartnerUnreadState();
     markMyMessagesAsRead();
     if (activeConn && activeConn.open) {
@@ -615,7 +613,7 @@ async function fetchOfflineMessages() {
               replyText: data.replyText || null,
               sender: 'partner',
               isStamp: data.isStamp,
-              isRead: isVisible, // 画面が表示中なら既読扱い
+              isRead: isVisible,
               timestamp: data.timestamp || Date.now()
             };
             saveAndRenderNewMessage(msgObj);
@@ -723,4 +721,6 @@ function switchToSecret() {
 }
 
 function hideToEditor() {
-  sessionStorage.removeItem(
+  sessionStorage.removeItem('open_secret_screen');
+  const secret = document.getElementById('secret-screen');
+  const editor = document.getEle
