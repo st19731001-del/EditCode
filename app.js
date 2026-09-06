@@ -130,13 +130,16 @@ function setupConnectionEvents() {
 
   activeConn.on('data', (data) => {
     if (data.type === 'chat') {
+      const list = document.getElementById('message-list');
+      const isVisible = list && !list.classList.contains('hidden-messages');
+      
       const msgObj = {
         id: data.id,
         text: data.text,
         replyText: data.replyText || null,
         sender: 'partner',
         isStamp: data.isStamp,
-        isRead: false,
+        isRead: isVisible, // 画面が表示中なら既読扱い、隠し中なら未読扱い
         timestamp: data.timestamp || Date.now()
       };
       saveAndRenderNewMessage(msgObj);
@@ -183,12 +186,11 @@ function setupJSIconTrigger() {
   });
 }
 
-// ================= Commit Changes ボタン（英語の設定メニュー） =================
+// ================= Commit Changes ボタン（設定メニュー） =================
 function showDummyCommitToast() {
   const current = getTriggerTapCount();
   const next = current === 1 ? 3 : 1;
   
-  // 開発用メッセージを装った英語の設定確認
   const choice = confirm(`[Git Config] Select Trigger Mode:\n\nCurrent: ${current}-Tap Mode\nSwitch to: ${next}-Tap Mode?`);
   
   if (choice) {
@@ -213,12 +215,30 @@ function showDummyCommitToast() {
   }
 }
 
-// ================= 未読通知バッジ更新（表画面エディタへのカモフラージュ通知含む） =================
+// 相手からの未読メッセージをすべて既読化する
+function clearPartnerUnreadState() {
+  let messages = getStoredMessages();
+  let updated = false;
+
+  messages = messages.map(m => {
+    if (m.sender === 'partner' && !m.isRead) {
+      m.isRead = true;
+      updated = true;
+    }
+    return m;
+  });
+
+  if (updated) {
+    saveStoredMessages(messages);
+  }
+}
+
+// 未読通知バッジ更新（アプリ内＆表画面通知）
 function updateUnreadBadgeCount() {
   const messages = getStoredMessages();
+  // 相手から届いたメッセージで、まだ読んでいないものだけをカウント
   const unreadCount = messages.filter(m => m.sender === 'partner' && !m.isRead).length;
   
-  // 裏画面の赤丸バッジ
   const badgeElem = document.getElementById('unread-badge');
   if (badgeElem) {
     if (unreadCount > 0) {
@@ -229,7 +249,6 @@ function updateUnreadBadgeCount() {
     }
   }
 
-  // 表画面（エディタ）の Commit Changes ボタンへのステルス通知（未読時に * マーク付与）
   const commitBtn = document.querySelector('.btn-commit');
   if (commitBtn) {
     if (unreadCount > 0) {
@@ -255,6 +274,8 @@ function toggleMessageVisibility() {
     if (inputArea) inputArea.classList.remove('hidden-input');
     if (btn) btn.innerText = '🙈';
     
+    // 表示されたら相手の未読をクリア
+    clearPartnerUnreadState();
     markMyMessagesAsRead();
     if (activeConn && activeConn.open) {
       activeConn.send({ type: 'read_ack_all' });
@@ -266,6 +287,7 @@ function toggleMessageVisibility() {
     const palette = document.getElementById('stamp-palette');
     if (palette) palette.classList.add('hidden');
   }
+  updateUnreadBadgeCount();
 }
 
 // ================= メッセージ送信 =================
@@ -584,13 +606,16 @@ async function fetchOfflineMessages() {
         try {
           const data = JSON.parse(issue.body);
           if (data.target === myRole) {
+            const list = document.getElementById('message-list');
+            const isVisible = list && !list.classList.contains('hidden-messages');
+
             const msgObj = {
               id: data.id,
               text: data.text,
               replyText: data.replyText || null,
               sender: 'partner',
               isStamp: data.isStamp,
-              isRead: false,
+              isRead: isVisible, // 画面が表示中なら既読扱い
               timestamp: data.timestamp || Date.now()
             };
             saveAndRenderNewMessage(msgObj);
@@ -698,22 +723,4 @@ function switchToSecret() {
 }
 
 function hideToEditor() {
-  sessionStorage.removeItem('open_secret_screen');
-  const secret = document.getElementById('secret-screen');
-  const editor = document.getElementById('editor-screen');
-  if (secret) secret.classList.add('hidden');
-  if (editor) editor.classList.remove('hidden');
-  
-  const palette = document.getElementById('stamp-palette');
-  if (palette) palette.classList.add('hidden');
-  cancelReply();
-  updateUnreadBadgeCount();
-}
-
-if (window.DeviceOrientationEvent) {
-  window.addEventListener('deviceorientation', (event) => {
-    if (event.beta < -150 || event.beta > 150) {
-      hideToEditor();
-    }
-  });
-}
+  sessionStorage.removeItem(
