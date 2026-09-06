@@ -306,7 +306,7 @@ function toggleMessageVisibility() {
   if (list.classList.contains('hidden-messages')) {
     list.classList.remove('hidden-messages');
     if (inputArea) inputArea.classList.remove('hidden-input');
-    if (btn) btn.innerText = '👁️';
+    if (btn) btn.innerText = '🙈';
     
     clearPartnerUnreadState();
     markMyMessagesAsRead();
@@ -316,7 +316,7 @@ function toggleMessageVisibility() {
   } else {
     list.classList.add('hidden-messages');
     if (inputArea) inputArea.classList.add('hidden-input');
-    if (btn) btn.innerText = '🙈';
+    if (btn) btn.innerText = '👁️';
     const palette = document.getElementById('stamp-palette');
     if (palette) palette.classList.add('hidden');
   }
@@ -780,9 +780,9 @@ function switchToSecret() {
   const inputArea = document.getElementById('input-area');
   const btn = document.querySelector('.btn-show');
   
-  // 画面を開いた時はデフォルトで表示（可視化）状態にする
-  if (list) list.classList.remove('hidden-messages');
-  if (inputArea) inputArea.classList.remove('hidden-input');
+  // 画面切り替え直後はメッセージと入力欄を非表示（マスク）状態にする
+  if (list) list.classList.add('hidden-messages');
+  if (inputArea) inputArea.classList.add('hidden-input');
   if (btn) btn.innerText = '👁️';
 
   const roleDisplay = document.getElementById('role-display');
