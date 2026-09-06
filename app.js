@@ -255,7 +255,6 @@ function clearPartnerUnreadState() {
   const now = Date.now();
 
   messages = messages.map(m => {
-    // 相手から届いた未読メッセージのみを既読にする（自分のメッセージには触れない）
     if (m.sender === 'partner' && !m.isRead) {
       m.isRead = true;
       m.readAt = now;
@@ -311,7 +310,6 @@ function toggleMessageVisibility() {
     }
     if (btn) btn.innerText = '🙈';
     
-    // 相手からのメッセージのみ既読化
     clearPartnerUnreadState();
     if (activeConn && activeConn.open) {
       activeConn.send({ type: 'read_ack_all' });
@@ -391,7 +389,6 @@ async function dispatchMessage(text, isStamp = false) {
   const isOnline = activeConn && activeConn.open;
   const now = Date.now();
   
-  // 送信時は相手の確認通知を受けるまで厳格に isRead = false に固定
   const msgObj = {
     id: msgId,
     text: text,
@@ -436,8 +433,12 @@ function formatTime(timestamp) {
   }
 }
 
-function attachLongPressMenu(msgElement, msgText, msgId) {
+// 長押し ＆ 横スライド（スワイプ）削除処理
+function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
   let timer = null;
+  let startX = 0;
+  let currentX = 0;
+  let isSwiping = false;
 
   const openSheet = () => {
     selectedMsgTarget = { text: msgText, id: msgId };
@@ -445,12 +446,55 @@ function attachLongPressMenu(msgElement, msgText, msgId) {
     if (sheet) sheet.classList.remove('hidden');
   };
 
-  msgElement.addEventListener('touchstart', () => {
+  msgElement.addEventListener('touchstart', (e) => {
+    startX = e.touches[0].clientX;
+    currentX = startX;
+    isSwiping = false;
+    msgElement.style.transition = 'none';
     timer = setTimeout(openSheet, 500);
   }, { passive: true });
 
-  msgElement.addEventListener('touchend', () => clearTimeout(timer));
-  msgElement.addEventListener('touchmove', () => clearTimeout(timer));
+  msgElement.addEventListener('touchmove', (e) => {
+    currentX = e.touches[0].clientX;
+    const diffX = currentX - startX;
+
+    // 左へ一定距離以上動いた場合はスワイプ動作と判定し、長押しタイマーをキャンセル
+    if (diffX < -10) {
+      clearTimeout(timer);
+      isSwiping = true;
+    }
+
+    // 左方向への移動を指に追従させる（最大-120pxまで）
+    if (isSwiping && diffX < 0 && diffX > -120) {
+      msgElement.style.transform = `translateX(${diffX}px)`;
+    }
+  }, { passive: true });
+
+  msgElement.addEventListener('touchend', () => {
+    clearTimeout(timer);
+    msgElement.style.transition = 'transform 0.2s ease';
+
+    const diffX = currentX - startX;
+
+    // 80px以上左に引き切った場合は削除確認を表示
+    if (isSwiping && diffX < -80) {
+      msgElement.style.transform = 'translateX(-100px)';
+      setTimeout(() => {
+        if (confirm("このメッセージを削除しますか？")) {
+          deleteMessage(msgId);
+        } else {
+          msgElement.style.transform = 'translateX(0)';
+        }
+      }, 50);
+    } else {
+      // 途中で指を離した場合は元の位置へ戻す
+      msgElement.style.transform = 'translateX(0)';
+    }
+
+    startX = 0;
+    currentX = 0;
+    isSwiping = false;
+  });
 
   msgElement.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -525,7 +569,6 @@ function renderSingleMessage(m) {
 
   const existing = document.querySelector(`[data-id="${m.id}"]`);
   if (existing) {
-    // 既読状態のテキスト表示の更新のみ行う
     if (m.sender === 'me') {
       const statusElem = existing.querySelector('.read-status-text');
       if (statusElem) statusElem.innerText = m.isRead ? '既読' : '未読';
@@ -554,7 +597,7 @@ function renderSingleMessage(m) {
 
   msgContainer.innerHTML = html;
 
-  attachLongPressMenu(msgContainer, m.text, m.id);
+  attachLongPressAndSwipeMenu(msgContainer, m.text, m.id);
   list.appendChild(msgContainer);
   list.scrollTop = list.scrollHeight;
 }
@@ -563,14 +606,12 @@ function escapeHtml(str) {
   return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
-// 相手からの既読通知（read_ack）を受け取った時だけ「自分のメッセージ」を既読状態へ変更する
 function markMyMessagesAsRead(targetId = null) {
   let messages = getStoredMessages();
   let updated = false;
   const now = Date.now();
 
   messages = messages.map(m => {
-    // 厳格に自分のメッセージ（sender === 'me'）のみ判定
     if (m.sender === 'me' && (!targetId || m.id === targetId)) {
       if (!m.isRead) {
         m.isRead = true;
