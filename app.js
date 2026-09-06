@@ -25,7 +25,7 @@ let activeCall = null;
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
 
-// タップ回数設定（デフォルト：1回タップ）
+// トリガー設定の取得・保存
 function getTriggerTapCount() {
   return parseInt(localStorage.getItem('js_trigger_tap_count') || '1', 10);
 }
@@ -55,7 +55,6 @@ function saveStoredMessages(messages) {
 // 初期化処理
 window.addEventListener('DOMContentLoaded', () => {
   setupJSIconTrigger();
-  requestNotificationPermission(); // 通知許可のリクエスト
 
   const codeArea = document.getElementById('code-area');
   if (codeArea) {
@@ -65,7 +64,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }, 100);
   }
 
-  // textarea自動伸縮設定
   const chatInput = document.getElementById('chat-input');
   if (chatInput) {
     chatInput.addEventListener('input', () => {
@@ -78,13 +76,6 @@ window.addEventListener('DOMContentLoaded', () => {
     switchToSecret();
   }
 });
-
-// 通知の許可リクエスト
-function requestNotificationPermission() {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
-}
 
 peer.on('open', (id) => {
   connectToPartner();
@@ -166,51 +157,16 @@ function setupConnectionEvents() {
   });
 }
 
-// ================= 青い「JS」アイコン タップ＆長押し設定 =================
+// ================= 青い「JS」アイコンタップ判定 =================
 function setupJSIconTrigger() {
   const icon = document.getElementById('js-icon-trigger');
   if (!icon) return;
 
   let tapCount = 0;
   let tapTimer = null;
-  let longPressTimer = null;
-  let isLongPress = false;
 
-  // --- 長押し判定 (長押しで設定変更) ---
-  const startLongPress = () => {
-    isLongPress = false;
-    longPressTimer = setTimeout(() => {
-      isLongPress = true;
-      const current = getTriggerTapCount();
-      const choice = confirm(`【設定変更】\n現在の起動条件：${current}回タップ\n\n「OK」を押すと【${current === 1 ? '3回' : '1回'}タップ】に変更します。`);
-      if (choice) {
-        const nextCount = current === 1 ? 3 : 1;
-        setTriggerTapCount(nextCount);
-        alert(`起動条件を【${nextCount}回タップ】に変更しました！`);
-      }
-    }, 800); // 0.8秒で長押し起動
-  };
-
-  const cancelLongPress = () => {
-    if (longPressTimer) clearTimeout(longPressTimer);
-  };
-
-  // タッチ・クリックイベントの設定
-  icon.addEventListener('touchstart', startLongPress, { passive: true });
-  icon.addEventListener('touchend', cancelLongPress);
-  icon.addEventListener('touchmove', cancelLongPress);
-
-  icon.addEventListener('mousedown', startLongPress);
-  icon.addEventListener('mouseup', cancelLongPress);
-
-  // --- タップカウント判定 ---
   icon.addEventListener('click', (e) => {
     e.preventDefault();
-    if (isLongPress) {
-      isLongPress = false;
-      return;
-    }
-
     const requiredTaps = getTriggerTapCount();
     tapCount++;
 
@@ -222,18 +178,68 @@ function setupJSIconTrigger() {
     } else {
       tapTimer = setTimeout(() => {
         tapCount = 0;
-      }, 600); // 0.6秒以内に次のタップがないとカウントリセット
+      }, 600);
     }
   });
 }
 
+// ================= Commit Changes ボタン（英語の設定メニュー） =================
 function showDummyCommitToast() {
-  const toast = document.getElementById('dummy-toast');
-  if (!toast) return;
-  toast.classList.remove('hidden');
-  setTimeout(() => {
-    toast.classList.add('hidden');
-  }, 1500);
+  const current = getTriggerTapCount();
+  const next = current === 1 ? 3 : 1;
+  
+  // 開発用メッセージを装った英語の設定確認
+  const choice = confirm(`[Git Config] Select Trigger Mode:\n\nCurrent: ${current}-Tap Mode\nSwitch to: ${next}-Tap Mode?`);
+  
+  if (choice) {
+    setTriggerTapCount(next);
+    const toast = document.getElementById('dummy-toast');
+    if (toast) {
+      toast.innerText = `[CONFIG UPDATED] Trigger mode set to ${next}-Tap.`;
+      toast.classList.remove('hidden');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+        toast.innerText = '[SUCCESS] Commit applied to main branch.';
+      }, 2000);
+    }
+  } else {
+    const toast = document.getElementById('dummy-toast');
+    if (toast) {
+      toast.classList.remove('hidden');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 1500);
+    }
+  }
+}
+
+// ================= 未読通知バッジ更新（表画面エディタへのカモフラージュ通知含む） =================
+function updateUnreadBadgeCount() {
+  const messages = getStoredMessages();
+  const unreadCount = messages.filter(m => m.sender === 'partner' && !m.isRead).length;
+  
+  // 裏画面の赤丸バッジ
+  const badgeElem = document.getElementById('unread-badge');
+  if (badgeElem) {
+    if (unreadCount > 0) {
+      badgeElem.innerText = unreadCount;
+      badgeElem.classList.remove('hidden');
+    } else {
+      badgeElem.classList.add('hidden');
+    }
+  }
+
+  // 表画面（エディタ）の Commit Changes ボタンへのステルス通知（未読時に * マーク付与）
+  const commitBtn = document.querySelector('.btn-commit');
+  if (commitBtn) {
+    if (unreadCount > 0) {
+      commitBtn.innerText = `Commit Changes (${unreadCount})`;
+    } else {
+      commitBtn.innerText = 'Commit Changes';
+    }
+  }
+
+  updateBadge(unreadCount);
 }
 
 // ================= メッセージ非表示 / 表示切替 =================
@@ -367,24 +373,6 @@ function formatTime(timestamp) {
   } else {
     return `${date.getMonth() + 1}/${date.getDate()} ${timeStr}`;
   }
-}
-
-// 未読丸数字バッジの更新（アプリ内＆PWAアイコン）
-function updateUnreadBadgeCount() {
-  const messages = getStoredMessages();
-  const unreadCount = messages.filter(m => m.sender === 'partner' && !m.isRead).length;
-  
-  const badgeElem = document.getElementById('unread-badge');
-  if (badgeElem) {
-    if (unreadCount > 0) {
-      badgeElem.innerText = unreadCount;
-      badgeElem.classList.remove('hidden');
-    } else {
-      badgeElem.classList.add('hidden');
-    }
-  }
-
-  updateBadge(unreadCount);
 }
 
 // ================= タップ操作メニューシート =================
@@ -719,6 +707,13 @@ function hideToEditor() {
   const palette = document.getElementById('stamp-palette');
   if (palette) palette.classList.add('hidden');
   cancelReply();
+  updateUnreadBadgeCount();
 }
 
-if (wind
+if (window.DeviceOrientationEvent) {
+  window.addEventListener('deviceorientation', (event) => {
+    if (event.beta < -150 || event.beta > 150) {
+      hideToEditor();
+    }
+  });
+}
