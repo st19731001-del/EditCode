@@ -3,22 +3,34 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>EditCode - Online Editor</title>
+  <title>EditCode / index.html</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="app.js" defer></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body, html { width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #1e1e1e; color: #fff; overflow: hidden; }
+    body, html { width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: #0d1117; color: #c9d1d9; overflow: hidden; }
     .hidden { display: none !important; }
 
-    /* 表画面 (VS Code風エディタ) */
-    #editor-screen { display: flex; flex-direction: column; height: 100vh; background: #1e1e1e; }
-    .editor-header { height: 45px; background: #252526; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid #333; }
-    .editor-title { font-size: 13px; color: #cccccc; display: flex; align-items: center; gap: 8px; }
-    .js-icon { background: #f7df1e; color: #000; font-weight: bold; font-size: 11px; padding: 2px 4px; border-radius: 2px; cursor: pointer; user-select: none; }
-    .btn-commit { background: #0e639c; color: #fff; border: none; padding: 6px 12px; border-radius: 3px; font-size: 12px; cursor: pointer; }
-    .btn-commit:active { background: #1177bb; }
-    #code-area { flex: 1; width: 100%; background: #1e1e1e; color: #d4d4d4; border: none; padding: 12px; font-family: "Courier New", Courier, monospace; font-size: 13px; resize: none; outline: none; }
+    /* 表画面 (GitHub コードビューア風デザイン) */
+    #editor-screen { display: flex; flex-direction: column; height: 100vh; background: #0d1117; padding: 8px; }
+    
+    .github-top-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; margin-bottom: 8px; border-bottom: 1px solid #21262d; }
+    .github-path { font-size: 13px; font-weight: 600; color: #58a6ff; display: flex; align-items: center; gap: 6px; }
+    .js-icon { background: #f7df1e; color: #000; font-weight: bold; font-size: 10px; padding: 1px 4px; border-radius: 2px; cursor: pointer; user-select: none; }
+    .btn-commit { background: #238636; color: #fff; border: 1px solid rgba(240,246,252,0.1); padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; }
+    .btn-commit:active { background: #2ea043; }
+
+    .github-box { flex: 1; border: 1px solid #30363d; border-radius: 6px; background: #0d1117; display: flex; flex-direction: column; overflow: hidden; }
+    .github-box-header { height: 38px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; align-items: center; padding: 0 8px; gap: 4px; }
+    
+    .tab-btn { padding: 4px 10px; font-size: 12px; border-radius: 6px; color: #8b949e; background: transparent; border: none; font-weight: 500; }
+    .tab-btn.active { background: #21262d; color: #f0f6fc; }
+
+    .code-container { flex: 1; display: flex; overflow: auto; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 20px; }
+    .line-numbers { padding: 8px 0; background: #0d1117; color: #6e7681; text-align: right; user-select: none; width: 40px; border-right: 1px solid #21262d; flex-shrink: 0; }
+    .line-numbers div { padding: 0 8px; }
+    
+    #code-area { flex: 1; background: #0d1117; color: #c9d1d9; border: none; padding: 8px; resize: none; outline: none; font-family: inherit; font-size: inherit; line-height: inherit; white-space: pre; overflow-x: auto; }
 
     /* 裏画面 (暗号化チャット) */
     #secret-screen { display: flex; flex-direction: column; height: 100vh; background: #121212; position: relative; }
@@ -26,7 +38,6 @@
     .header-left { display: flex; align-items: center; gap: 8px; }
     .btn-icon { background: transparent; border: none; color: #fff; font-size: 18px; cursor: pointer; padding: 4px; }
     
-    /* 接続状態表示（色覚に配慮したUI） */
     #role-display { font-size: 12px; transition: all 0.2s ease; }
 
     .chat-body { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
@@ -63,27 +74,45 @@
     .action-btn.danger { color: #ff3b30; }
 
     /* ダミートースト */
-    #dummy-toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #28a745; color: #fff; padding: 8px 16px; border-radius: 4px; font-size: 12px; z-index: 5000; }
+    #dummy-toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #238636; color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 12px; z-index: 5000; }
   </style>
 </head>
 <body>
 
-  <!-- 表画面: VS Code風エディタ -->
+  <!-- 表画面: GitHub コードビューア風エディタ -->
   <div id="editor-screen">
-    <div class="editor-header">
-      <div class="editor-title">
+    <div class="github-top-bar">
+      <div class="github-path">
         <span id="js-icon-trigger" class="js-icon">JS</span>
-        <span>app.js - EditCode</span>
+        <span>EditCode / index.html</span>
       </div>
       <button class="btn-commit" onclick="showDummyCommitToast()">Commit Changes</button>
     </div>
-    <textarea id="code-area" spellcheck="false">// Auto-generated maintenance script
-function checkSystemStatus() {
-  const status = "OPERATIONAL";
-  console.log(`[SYSTEM]: Status is currently ${status}`);
-  return true;
-}
-checkSystemStatus();</textarea>
+
+    <div class="github-box">
+      <div class="github-box-header">
+        <button class="tab-btn active">Code</button>
+        <button class="tab-btn">Blame</button>
+      </div>
+      <div class="code-container">
+        <div class="line-numbers">
+          <div>1</div><div>2</div><div>3</div><div>4</div><div>5</div>
+          <div>6</div><div>7</div><div>8</div><div>9</div><div>10</div>
+          <div>11</div><div>12</div><div>13</div><div>14</div><div>15</div>
+          <div>16</div><div>17</div><div>18</div><div>19</div><div>20</div>
+        </div>
+        <textarea id="code-area" spellcheck="false"><!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>EditCode - Online Editor</title>
+</head>
+<body>
+  <script src="app.js"></script>
+</body>
+</html></textarea>
+      </div>
+    </div>
   </div>
 
   <!-- 裏画面: 暗号化チャット -->
@@ -118,7 +147,7 @@ checkSystemStatus();</textarea>
       <span class="stamp-item" onclick="sendStamp('🔥')">🔥</span>
     </div>
 
-    <!-- 入力エリア -->
+    <!-- 入力エリア（学習抑止・シークレット入力属性強化） -->
     <div id="chat-input-area" class="chat-input-container hidden-input">
       <div id="reply-preview" class="hidden">
         <span id="reply-text">返信先テキスト</span>
@@ -131,7 +160,8 @@ checkSystemStatus();</textarea>
         <label for="file-input" style="cursor:pointer;font-size:20px;padding:0 4px;">📎</label>
         <input type="file" id="file-input" style="display:none;" onchange="handleFileSelect(event)">
 
-        <textarea id="chat-input" rows="1" placeholder="メッセージを入力..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-form-type="other"></textarea>
+        <!-- シークレット入力強制属性を付与 -->
+        <textarea id="chat-input" rows="1" placeholder="メッセージを入力..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-form-type="other" inputmode="text" data-lpignore="true"></textarea>
         <button class="btn-send" onclick="sendMsg()">送信</button>
       </div>
     </div>
