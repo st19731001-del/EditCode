@@ -47,6 +47,9 @@ function saveStoredMessages(messages) {
   const now = Date.now();
   const oneHour = 1 * 60 * 60 * 1000; // 1時間（ミリ秒）
   
+  // タイムスタンプ順（古い順）に確実にソート
+  messages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
   const filtered = messages.filter(m => {
     if (m.isRead && m.readAt && (now - m.readAt) > oneHour) {
       return false;
@@ -73,7 +76,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }, 100);
   }
 
-  // チャット入力欄へのキーボード学習抑止属性の付与
+  // チャット入力欄のキーボード学習抑止
   const chatInput = document.getElementById('chat-input');
   if (chatInput) {
     chatInput.setAttribute('autocomplete', 'off');
@@ -93,7 +96,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// 画面消灯（スリープ）やバックグラウンド移行時に表画面へ強制復帰
+// 画面消灯やバックグラウンド移行時の自動保護
 document.addEventListener('visibilitychange', () => {
   if (document.hidden || document.visibilityState === 'hidden') {
     hideToEditor();
@@ -135,11 +138,13 @@ function initPeer() {
   });
 
   peer.on('disconnected', () => {
+    updateOnlineUI(false);
     scheduleReconnect();
   });
 
   peer.on('error', (err) => {
     console.error('Peer error:', err);
+    updateOnlineUI(false);
     scheduleReconnect();
   });
 }
@@ -149,11 +154,14 @@ function scheduleReconnect() {
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     connectToPartner();
-  }, 3000);
+  }, 2000);
 }
 
 function connectToPartner() {
-  if (activeConn && activeConn.open) return;
+  if (activeConn && activeConn.open) {
+    updateOnlineUI(true);
+    return;
+  }
   if (!peer || peer.disconnected) {
     try { peer.reconnect(); } catch(e) {}
   }
@@ -169,12 +177,7 @@ function connectToPartner() {
 }
 
 function setupConnectionEvents() {
-  const statusDot = document.querySelector('.status-dot');
-  const roleDisplay = document.getElementById('role-display');
-  
-  if (statusDot) statusDot.style.background = '#4caf50';
-  if (roleDisplay) roleDisplay.innerText = `Me: ${myRole} | Partner (Online)`;
-
+  updateOnlineUI(true);
   renderAllMessages();
 
   activeConn.on('data', (data) => {
@@ -186,6 +189,9 @@ function setupConnectionEvents() {
         id: data.id,
         text: data.text,
         replyText: data.replyText || null,
+        fileData: data.fileData || null,
+        fileName: data.fileName || null,
+        fileType: data.fileType || null,
         sender: 'partner',
         isStamp: data.isStamp,
         isRead: isSecretActive,
@@ -211,14 +217,27 @@ function setupConnectionEvents() {
   });
 
   activeConn.on('close', () => {
-    if (statusDot) statusDot.style.background = '#777';
-    if (roleDisplay) roleDisplay.innerText = `Me: ${myRole} | Partner (Offline)`;
+    updateOnlineUI(false);
     activeConn = null;
     scheduleReconnect();
   });
 }
 
-// 青い「JS」アイコンタップ判定（3回連打＋英語認証ダイアログ）
+// 色覚に配慮したわかりやすい接続状態表示UI（アイコン＋明瞭なテキスト＋高コントラスト）
+function updateOnlineUI(isOnline) {
+  const roleDisplay = document.getElementById('role-display');
+  if (!roleDisplay) return;
+
+  if (isOnline) {
+    roleDisplay.style.cssText = 'background:#0d6efd;color:#ffffff;padding:4px 10px;border-radius:4px;font-weight:bold;display:inline-block;border:2px solid #ffca28;';
+    roleDisplay.innerText = `Me: ${myRole} | ⚡ ONLINE［リアルタイム通信］`;
+  } else {
+    roleDisplay.style.cssText = 'background:#495057;color:#e0e0e0;padding:4px 10px;border-radius:4px;font-weight:normal;display:inline-block;border:1px solid #6c757d;';
+    roleDisplay.innerText = `Me: ${myRole} | 📴 OFFLINE［非同期DBモード］`;
+  }
+}
+
+// 青い「JS」アイコンタップ判定
 function setupJSIconTrigger() {
   const icon = document.getElementById('js-icon-trigger');
   if (!icon) return;
@@ -253,7 +272,7 @@ function setupJSIconTrigger() {
   icon.addEventListener('click', handleTap);
 }
 
-// Commit Changes ボタン（ダミー成功トースト＋未読・既読状態の同期）
+// Commit Changes ボタン
 async function showDummyCommitToast() {
   const toast = document.getElementById('dummy-toast');
   if (toast) {
@@ -314,7 +333,6 @@ function updateUnreadBadgeCount() {
   updateBadge(unreadCount);
 }
 
-// メッセージ非表示 / 表示切替
 function toggleMessageVisibility() {
   const list = document.getElementById('message-list');
   const inputArea = document.getElementById('chat-input-area') || document.getElementById('input-area');
@@ -403,7 +421,32 @@ async function sendStamp(emoji) {
   if (palette) palette.classList.add('hidden');
 }
 
-async function dispatchMessage(text, isStamp = false) {
+// 画像・ファイル送信処理
+async function handleFileSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // 簡易サイズ制限（5MB以下推奨）
+  if (file.size > 5 * 1024 * 1024) {
+    alert('ファイルサイズが大きすぎます（5MB以下のファイルを選択してください）');
+    event.target.value = '';
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const base64Data = e.target.result;
+    await dispatchMessage(file.name, false, {
+      data: base64Data,
+      name: file.name,
+      type: file.type
+    });
+    event.target.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function dispatchMessage(text, isStamp = false, fileObj = null) {
   const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   const isOnline = activeConn && activeConn.open;
   const now = Date.now();
@@ -412,6 +455,9 @@ async function dispatchMessage(text, isStamp = false) {
     id: msgId,
     text: text,
     replyText: currentReplyTo ? currentReplyTo.text : null,
+    fileData: fileObj ? fileObj.data : null,
+    fileName: fileObj ? fileObj.name : null,
+    fileType: fileObj ? fileObj.type : null,
     sender: 'me',
     isStamp: isStamp,
     isRead: false,
@@ -426,12 +472,15 @@ async function dispatchMessage(text, isStamp = false) {
       type: 'chat', 
       text: text, 
       replyText: msgObj.replyText, 
+      fileData: msgObj.fileData,
+      fileName: msgObj.fileName,
+      fileType: msgObj.fileType,
       isStamp: isStamp, 
       id: msgId,
       timestamp: now
     });
   } else {
-    await saveMessageToGitHub(text, isStamp, msgId, msgObj.replyText, now);
+    await saveMessageToGitHub(text, isStamp, msgId, msgObj.replyText, now, fileObj);
   }
 }
 
@@ -553,7 +602,7 @@ function deleteSelectedMessages() {
   }
 }
 
-// 長押し ＆ 横スライド（スワイプ）削除処理
+// 長押し ＆ スワイプ削除処理
 function attachLongPressAndSwipeMenu(msgElement, msgText, msgId) {
   let timer = null;
   let startX = 0;
@@ -682,6 +731,9 @@ function renderAllMessages() {
 
   const messages = saveStoredMessages(getStoredMessages());
   messages.forEach(m => renderSingleMessage(m));
+  
+  // 描画後、最下部へ自動スクロール
+  list.scrollTop = list.scrollHeight;
   updateUnreadBadgeCount();
 }
 
@@ -691,8 +743,9 @@ function saveAndRenderNewMessage(msgObj) {
     messages.push(msgObj);
     saveStoredMessages(messages);
   }
-  renderSingleMessage(msgObj);
-  updateUnreadBadgeCount();
+  
+  // 常に時系列（タイムスタンプ順）に完全再描画して順序の逆転を防止
+  renderAllMessages();
 }
 
 function renderSingleMessage(m) {
@@ -743,7 +796,17 @@ function renderSingleMessage(m) {
   if (m.replyText) {
     html += `<div class="reply-quote">↩ ${escapeHtml(m.replyText)}</div>`;
   }
-  html += `<span class="msg-text">${escapeHtml(m.text)}</span>`;
+
+  // 画像・ファイルの表示・ダウンロード処理
+  if (m.fileData) {
+    if (m.fileType && m.fileType.startsWith('image/')) {
+      html += `<div class="file-attachment"><img src="${m.fileData}" style="max-width:100%;border-radius:8px;margin-bottom:4px;cursor:pointer;" onclick="downloadFile('${m.fileData}', '${escapeHtml(m.fileName)}')"/><br/><a href="${m.fileData}" download="${escapeHtml(m.fileName)}" style="color:#64b5f6;font-size:12px;text-decoration:underline;">📥 ${escapeHtml(m.fileName)} を保存</a></div>`;
+    } else {
+      html += `<div class="file-attachment"><a href="${m.fileData}" download="${escapeHtml(m.fileName)}" style="color:#64b5f6;font-size:14px;text-decoration:underline;">📎 📥 ${escapeHtml(m.fileName)} をダウンロード</a></div>`;
+    }
+  } else {
+    html += `<span class="msg-text">${escapeHtml(m.text)}</span>`;
+  }
   
   html += `<div class="msg-meta">`;
   if (m.sender === 'me') {
@@ -756,7 +819,15 @@ function renderSingleMessage(m) {
 
   attachLongPressAndSwipeMenu(msgContainer, m.text, m.id);
   list.appendChild(msgContainer);
-  list.scrollTop = list.scrollHeight;
+}
+
+function downloadFile(dataUrl, fileName) {
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 function escapeHtml(str) {
@@ -808,7 +879,7 @@ function deleteMessage(msgId) {
   }
 }
 
-async function saveMessageToGitHub(text, isStamp, msgId, replyText = null, timestamp = Date.now()) {
+async function saveMessageToGitHub(text, isStamp, msgId, replyText = null, timestamp = Date.now(), fileObj = null) {
   const token = GITHUB_CONFIG.getToken();
   if (!token) return;
 
@@ -818,6 +889,9 @@ async function saveMessageToGitHub(text, isStamp, msgId, replyText = null, times
     target: targetRole,
     text: text,
     replyText: replyText,
+    fileData: fileObj ? fileObj.data : null,
+    fileName: fileObj ? fileObj.name : null,
+    fileType: fileObj ? fileObj.type : null,
     isStamp: isStamp,
     timestamp: timestamp
   });
@@ -845,7 +919,6 @@ async function fetchOfflineMessages() {
   if (!token) return;
 
   try {
-    // 自分宛ての未読 Issue を取得
     const res = await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues?labels=offline-msg&state=open&per_page=100`, {
       headers: { 'Authorization': `token ${token}` }
     });
@@ -865,6 +938,9 @@ async function fetchOfflineMessages() {
                 id: data.id,
                 text: data.text,
                 replyText: data.replyText || null,
+                fileData: data.fileData || null,
+                fileName: data.fileName || null,
+                fileType: data.fileType || null,
                 sender: 'partner',
                 isStamp: data.isStamp,
                 isRead: isSecretActive,
@@ -888,9 +964,7 @@ async function fetchOfflineMessages() {
       }
     }
 
-    // 自分が送信した未読メッセージが相手側で Closed（既読）になったかを全状態から同期取得
     syncClosedMyMessages(token);
-
     updateUnreadBadgeCount();
   } catch (err) {
     console.error('未読取得エラー:', err);
@@ -1067,12 +1141,6 @@ function switchToSecret() {
   if (list) list.classList.add('hidden-messages');
   if (inputArea) inputArea.classList.add('hidden-input');
   if (btn) btn.innerText = '👁️';
-
-  const roleDisplay = document.getElementById('role-display');
-  const isOnline = activeConn && activeConn.open;
-  if (roleDisplay) {
-    roleDisplay.innerText = `Me: ${myRole} | Partner (${isOnline ? 'Online' : 'Offline'})`;
-  }
 
   renderAllMessages();
   connectToPartner();
