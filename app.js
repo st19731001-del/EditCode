@@ -73,8 +73,15 @@ window.addEventListener('DOMContentLoaded', () => {
     }, 100);
   }
 
+  // チャット入力欄へのキーボード学習抑止属性の付与
   const chatInput = document.getElementById('chat-input');
   if (chatInput) {
+    chatInput.setAttribute('autocomplete', 'off');
+    chatInput.setAttribute('autocorrect', 'off');
+    chatInput.setAttribute('autocapitalize', 'off');
+    chatInput.setAttribute('spellcheck', 'false');
+    chatInput.setAttribute('data-form-type', 'other');
+
     chatInput.addEventListener('input', () => {
       chatInput.style.height = 'auto';
       chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
