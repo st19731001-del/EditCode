@@ -42,7 +42,7 @@ function getStoredMessages() {
   }
 }
 
-// 既読後1時間経過したメッセージを自動消去（24時間から1時間に変更）
+// 既読後1時間経過したメッセージを自動消去
 function saveStoredMessages(messages) {
   const now = Date.now();
   const oneHour = 1 * 60 * 60 * 1000; // 1時間（ミリ秒）
@@ -246,7 +246,7 @@ function setupJSIconTrigger() {
   icon.addEventListener('click', handleTap);
 }
 
-// Commit Changes ボタン（ダミー成功トースト＋未読高速チェック）
+// Commit Changes ボタン（ダミー成功トースト＋未読・既読状態の同期）
 async function showDummyCommitToast() {
   const toast = document.getElementById('dummy-toast');
   if (toast) {
@@ -838,51 +838,78 @@ async function fetchOfflineMessages() {
   if (!token) return;
 
   try {
+    // 自分宛ての未読 Issue を取得
     const res = await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues?labels=offline-msg&state=open&per_page=100`, {
       headers: { 'Authorization': `token ${token}` }
     });
     
-    if (!res.ok) return;
-    const issues = await res.json();
-    
-    if (Array.isArray(issues)) {
-      const secretScreen = document.getElementById('secret-screen');
-      const isSecretActive = secretScreen && !secretScreen.classList.contains('hidden');
-      const closePromises = [];
+    if (res.ok) {
+      const issues = await res.json();
+      if (Array.isArray(issues)) {
+        const secretScreen = document.getElementById('secret-screen');
+        const isSecretActive = secretScreen && !secretScreen.classList.contains('hidden');
+        const closePromises = [];
 
-      issues.forEach(issue => {
-        try {
-          const data = JSON.parse(issue.body);
-          if (data && data.target === myRole) {
-            const msgObj = {
-              id: data.id,
-              text: data.text,
-              replyText: data.replyText || null,
-              sender: 'partner',
-              isStamp: data.isStamp,
-              isRead: isSecretActive,
-              readAt: isSecretActive ? Date.now() : null,
-              timestamp: data.timestamp || Date.now()
-            };
-            saveAndRenderNewMessage(msgObj);
-            
-            if (isSecretActive) {
-              closePromises.push(closeGitHubIssue(issue.number, token));
+        issues.forEach(issue => {
+          try {
+            const data = JSON.parse(issue.body);
+            if (data && data.target === myRole) {
+              const msgObj = {
+                id: data.id,
+                text: data.text,
+                replyText: data.replyText || null,
+                sender: 'partner',
+                isStamp: data.isStamp,
+                isRead: isSecretActive,
+                readAt: isSecretActive ? Date.now() : null,
+                timestamp: data.timestamp || Date.now()
+              };
+              saveAndRenderNewMessage(msgObj);
+              
+              if (isSecretActive) {
+                closePromises.push(closeGitHubIssue(issue.number, token));
+              }
             }
+          } catch (e) {
+            console.error('Issueパースエラー:', e);
           }
-        } catch (e) {
-          console.error('Issueパースエラー:', e);
-        }
-      });
+        });
 
-      if (closePromises.length > 0) {
-        Promise.all(closePromises).catch(err => console.error('一括Issueクローズエラー:', err));
+        if (closePromises.length > 0) {
+          Promise.all(closePromises).catch(err => console.error('一括Issueクローズエラー:', err));
+        }
       }
     }
+
+    // 自分が送信した未読メッセージが相手側で Closed（既読）になったかを全状態から同期取得
+    syncClosedMyMessages(token);
 
     updateUnreadBadgeCount();
   } catch (err) {
     console.error('未読取得エラー:', err);
+  }
+}
+
+async function syncClosedMyMessages(token) {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues?labels=offline-msg&state=closed&per_page=50`, {
+      headers: { 'Authorization': `token ${token}` }
+    });
+    if (!res.ok) return;
+    const closedIssues = await res.json();
+
+    if (Array.isArray(closedIssues)) {
+      closedIssues.forEach(issue => {
+        try {
+          const data = JSON.parse(issue.body);
+          if (data && data.sender === myRole && data.id) {
+            markMyMessagesAsRead(data.id);
+          }
+        } catch(e) {}
+      });
+    }
+  } catch(e) {
+    console.error('既読同期エラー:', e);
   }
 }
 
