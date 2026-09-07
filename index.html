@@ -2,135 +2,154 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EditCode</title>
-  
-  <link rel="manifest" href="./manifest.json">
-  <link rel="icon" href="./icon.png" type="image/png">
-  <link rel="apple-touch-icon" href="./icon.png">
-  <meta name="theme-color" content="#252526">
-
-  <link rel="stylesheet" href="./style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>EditCode - Online Editor</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="app.js" defer></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body, html { width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #1e1e1e; color: #fff; overflow: hidden; }
+    .hidden { display: none !important; }
+
+    /* 表画面 (VS Code風エディタ) */
+    #editor-screen { display: flex; flex-direction: column; height: 100vh; background: #1e1e1e; }
+    .editor-header { height: 45px; background: #252526; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid #333; }
+    .editor-title { font-size: 13px; color: #cccccc; display: flex; align-items: center; gap: 8px; }
+    .js-icon { background: #f7df1e; color: #000; font-weight: bold; font-size: 11px; padding: 2px 4px; border-radius: 2px; cursor: pointer; user-select: none; }
+    .btn-commit { background: #0e639c; color: #fff; border: none; padding: 6px 12px; border-radius: 3px; font-size: 12px; cursor: pointer; }
+    .btn-commit:active { background: #1177bb; }
+    #code-area { flex: 1; width: 100%; background: #1e1e1e; color: #d4d4d4; border: none; padding: 12px; font-family: "Courier New", Courier, monospace; font-size: 13px; resize: none; outline: none; }
+
+    /* 裏画面 (暗号化チャット) */
+    #secret-screen { display: flex; flex-direction: column; height: 100vh; background: #121212; position: relative; }
+    .chat-header { height: 50px; background: #1f1f1f; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid #2d2d2d; z-index: 10; }
+    .header-left { display: flex; align-items: center; gap: 8px; }
+    .btn-icon { background: transparent; border: none; color: #fff; font-size: 18px; cursor: pointer; padding: 4px; }
+    
+    /* 接続状態表示（色覚に配慮したUI） */
+    #role-display { font-size: 12px; transition: all 0.2s ease; }
+
+    .chat-body { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .hidden-messages { display: none !important; }
+
+    .system-msg { text-align: center; font-size: 11px; color: #888; margin: 6px 0; }
+    .msg { max-width: 80%; display: flex; flex-direction: column; position: relative; word-break: break-word; transition: transform 0.2s ease; }
+    .my-msg { align-self: flex-end; background: #007aff; color: #fff; padding: 8px 12px; border-radius: 16px 16px 2px 16px; }
+    .partner-msg { align-self: flex-start; background: #2c2c2e; color: #fff; padding: 8px 12px; border-radius: 16px 16px 16px 2px; }
+    .stamp-msg { background: transparent !important; font-size: 38px; padding: 0 !important; }
+    
+    .msg-meta { display: flex; align-items: center; justify-content: flex-end; gap: 4px; font-size: 10px; color: rgba(255,255,255,0.6); margin-top: 4px; }
+    .reply-quote { background: rgba(0,0,0,0.2); border-left: 2px solid #fff; padding: 4px 6px; font-size: 11px; margin-bottom: 4px; border-radius: 2px; }
+
+    /* 入力エリア */
+    .chat-input-container { background: #1f1f1f; border-top: 1px solid #2d2d2d; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+    .hidden-input { display: none !important; }
+    .input-row { display: flex; align-items: center; gap: 8px; }
+    
+    #chat-input { flex: 1; background: #2c2c2e; color: #fff; border: 1px solid #3a3a3c; border-radius: 18px; padding: 8px 12px; font-size: 14px; outline: none; max-height: 120px; resize: none; }
+    .btn-send { background: #007aff; color: #fff; border: none; padding: 8px 16px; border-radius: 18px; font-weight: bold; font-size: 13px; cursor: pointer; }
+    
+    /* 返信プレビュー */
+    #reply-preview { display: flex; align-items: center; justify-content: space-between; background: #2c2c2e; padding: 4px 10px; border-radius: 4px; font-size: 12px; color: #aaa; }
+
+    /* スタンプパレット */
+    #stamp-palette { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; background: #1f1f1f; border-top: 1px solid #2d2d2d; max-height: 150px; overflow-y: auto; }
+    .stamp-item { font-size: 26px; cursor: pointer; user-select: none; }
+
+    /* アクションシート */
+    .action-sheet-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 4000; display: flex; align-items: flex-end; }
+    .action-sheet-content { width: 100%; background: #1f1f1f; border-radius: 12px 12px 0 0; padding: 8px 0; }
+    .action-btn { width: 100%; background: transparent; border: none; color: #007aff; padding: 14px; font-size: 16px; border-bottom: 1px solid #2d2d2d; text-align: center; cursor: pointer; }
+    .action-btn.danger { color: #ff3b30; }
+
+    /* ダミートースト */
+    #dummy-toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #28a745; color: #fff; padding: 8px 16px; border-radius: 4px; font-size: 12px; z-index: 5000; }
+  </style>
 </head>
 <body>
 
-  <!-- ================= 1. 表の姿：本物っぽいダミーコードエディタ ================= -->
-  <div id="editor-screen" class="screen">
-    <header class="top-bar">
-      <div class="file-info">
-        <span class="file-icon" id="js-icon-trigger">JS</span>
-        <span class="file-name">analytics_core.js</span>
+  <!-- 表画面: VS Code風エディタ -->
+  <div id="editor-screen">
+    <div class="editor-header">
+      <div class="editor-title">
+        <span id="js-icon-trigger" class="js-icon">JS</span>
+        <span>app.js - EditCode</span>
       </div>
       <button class="btn-commit" onclick="showDummyCommitToast()">Commit Changes</button>
-    </header>
-
-    <div class="editor-container">
-      <div class="line-numbers">
-        1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16<br>17<br>18<br>19<br>20
-      </div>
-      <div class="code-area-wrapper">
-        <textarea class="code-area" id="code-area" spellcheck="false">// System Core Analytics Module v2.4.1
-import { initializeApp } from 'firebase/app';
-import { getAnalytics, logEvent } from 'firebase/analytics';
-
-const firebaseConfig = {
-  apiKey: "AIzaSyD-xX8910_sample_key_99812",
-  authDomain: "core-analytics-prod.firebaseapp.com",
-  projectId: "core-analytics-prod",
-  storageBucket: "core-analytics-prod.appspot.com"
-};
-
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-
-export function trackUserSession(sessionId) {
-  logEvent(analytics, 'session_start', { id: sessionId });
+    </div>
+    <textarea id="code-area" spellcheck="false">// Auto-generated maintenance script
+function checkSystemStatus() {
+  const status = "OPERATIONAL";
+  console.log(`[SYSTEM]: Status is currently ${status}`);
+  return true;
 }
+checkSystemStatus();</textarea>
+  </div>
 
-export function logCustomMetric(metricName, metricValue) {
-  logEvent(analytics, metricName, { value: metricValue });
-}
-
-console.log("Analytics engine initialized.");</textarea>
+  <!-- 裏画面: 暗号化チャット -->
+  <div id="secret-screen" class="hidden">
+    <div class="chat-header">
+      <div class="header-left">
+        <button class="btn-icon" onclick="hideToEditor()">🚪</button>
+        <span id="role-display">Me: user_a | 📴 OFFLINE［非同期DBモード］</span>
+      </div>
+      <div>
+        <button class="btn-icon" onclick="startCall()">📞</button>
+        <button class="btn-icon btn-show" onclick="toggleMessageVisibility()">👁️</button>
       </div>
     </div>
 
-    <div id="dummy-toast" class="dummy-toast hidden">[SUCCESS] Commit applied to main branch.</div>
-  </div>
+    <!-- メッセージ一覧 -->
+    <div id="message-list" class="chat-body hidden-messages">
+      <div class="system-msg">暗号化されたP2P通信が有効です</div>
+    </div>
 
-  <!-- ================= 2. 裏の姿：隠しメッセージ＆通話画面 ================= -->
-  <div id="secret-screen" class="screen hidden">
-    <header class="top-bar secret-bar">
-      <div class="partner-status">
-        <span class="status-dot"></span>
-        <span id="role-display" class="partner-name">Me: user_a | Partner (Offline)</span>
-        <span id="unread-badge" class="unread-badge hidden">0</span>
-      </div>
-      <div class="header-btns">
-        <button class="btn-call" onclick="startCall()">📞</button>
-        <button class="btn-show" onclick="toggleMessageVisibility()">👁️</button>
-        <button class="btn-hide" onclick="hideToEditor()">🔓</button>
-      </div>
-    </header>
+    <!-- スタンプパレット -->
+    <div id="stamp-palette" class="hidden">
+      <span class="stamp-item" onclick="sendStamp('😊')">😊</span>
+      <span class="stamp-item" onclick="sendStamp('😂')">😂</span>
+      <span class="stamp-item" onclick="sendStamp('😍')">😍</span>
+      <span class="stamp-item" onclick="sendStamp('👍')">👍</span>
+      <span class="stamp-item" onclick="sendStamp('🙏')">🙏</span>
+      <span class="stamp-item" onclick="sendStamp('😭')">😭</span>
+      <span class="stamp-item" onclick="sendStamp('😎')">😎</span>
+      <span class="stamp-item" onclick="sendStamp('🎉')">🎉</span>
+      <span class="stamp-item" onclick="sendStamp('❤️')">❤️</span>
+      <span class="stamp-item" onclick="sendStamp('🔥')">🔥</span>
+    </div>
 
-    <div class="chat-container">
-      <div class="message-list hidden-messages" id="message-list">
-        <div class="system-msg">暗号化されたP2P通信が有効です</div>
+    <!-- 入力エリア -->
+    <div id="chat-input-area" class="chat-input-container hidden-input">
+      <div id="reply-preview" class="hidden">
+        <span id="reply-text">返信先テキスト</span>
+        <button onclick="cancelReply()" style="background:none;border:none;color:#aaa;cursor:pointer;">✕</button>
       </div>
+      <div class="input-row">
+        <button class="btn-icon" onclick="toggleStampPalette()">😊</button>
+        
+        <!-- ファイル・画像添付ボタン -->
+        <label for="file-input" style="cursor:pointer;font-size:20px;padding:0 4px;">📎</label>
+        <input type="file" id="file-input" style="display:none;" onchange="handleFileSelect(event)">
 
-      <div id="stamp-palette" class="stamp-palette hidden">
-        <div class="stamp-grid">
-          <span onclick="sendStamp('🥹')">🥹</span>
-          <span onclick="sendStamp('😘')">😘</span>
-          <span onclick="sendStamp('🥰')">🥰</span>
-          <span onclick="sendStamp('😍')">😍</span>
-          <span onclick="sendStamp('💕')">💕</span>
-          <span onclick="sendStamp('👍')">👍</span>
-          <span onclick="sendStamp('❤️')">❤️</span>
-          <span onclick="sendStamp('😂')">😂</span>
-          <span onclick="sendStamp('😭')">😭</span>
-          <span onclick="sendStamp('🎉')">🎉</span>
-          <span onclick="sendStamp('🔥')">🔥</span>
-          <span onclick="sendStamp('✨')">✨</span>
-        </div>
-      </div>
-
-      <div id="reply-preview" class="reply-preview hidden">
-        <div class="reply-content">
-          <span class="reply-title">返信先:</span>
-          <span id="reply-text" class="reply-text"></span>
-        </div>
-        <button class="btn-cancel-reply" onclick="cancelReply()">✕</button>
-      </div>
-
-      <!-- 入力エリア（改行対応のtextareaに変更） -->
-      <div class="chat-input-area hidden-input" id="input-area">
-        <button class="btn-stamp" onclick="toggleStampPalette()">😊</button>
-        <textarea 
-          id="chat-input" 
-          placeholder="メッセージを入力..."
-          rows="1"
-          autocomplete="off" 
-          autocorrect="off" 
-          autocapitalize="off" 
-          spellcheck="false"
-        ></textarea>
-        <button onclick="sendMsg()">送信</button>
+        <textarea id="chat-input" rows="1" placeholder="メッセージを入力..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-form-type="other"></textarea>
+        <button class="btn-send" onclick="sendMsg()">送信</button>
       </div>
     </div>
   </div>
 
-  <div id="action-sheet" class="action-sheet-backdrop hidden" onclick="closeActionSheet()">
-    <div class="action-sheet-menu" onclick="event.stopPropagation()">
-      <button class="as-btn" onclick="handleMenuCopy()">📋 コピー</button>
-      <button class="as-btn" onclick="handleMenuReply()">💬 リプライ（返信）</button>
-      <button class="as-btn as-danger" onclick="handleMenuDelete()">🗑️ 削除</button>
-      <button onclick="handleMenuSelectDelete()">☑ 選択して削除</button>
-      <button class="as-btn as-cancel" onclick="closeActionSheet()">キャンセル</button>
+  <!-- アクションシート -->
+  <div id="action-sheet" class="action-sheet-overlay hidden" onclick="closeActionSheet()">
+    <div class="action-sheet-content" onclick="event.stopPropagation()">
+      <button class="action-btn" onclick="handleMenuCopy()">テキストをコピー</button>
+      <button class="action-btn" onclick="handleMenuReply()">返信</button>
+      <button class="action-btn" onclick="handleMenuSelectDelete()">選択して削除</button>
+      <button class="action-btn danger" onclick="handleMenuDelete()">削除</button>
+      <button class="action-btn" onclick="closeActionSheet()" style="color:#888;">キャンセル</button>
     </div>
   </div>
 
-  <script src="./app.js"></script>
+  <!-- トースト通知 -->
+  <div id="dummy-toast" class="hidden"></div>
+
 </body>
 </html>
