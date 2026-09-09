@@ -403,3 +403,15 @@ body, html {
   color: #888;
   margin-top: 6px;
 }
+/* メッセージテキスト内で改行（\n）を正しく表示させる設定 */
+.msg-text,
+.reply-quote {
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+}
+
+/* カモフラージュ・入力欄の調整 */
+#chat-input {
+  resize: none;
+  overflow-y: auto;
+}
