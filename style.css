@@ -186,10 +186,10 @@ body, html {
   flex-direction: column;
   background-color: #0d0d0d;
   position: relative;
-  overflow: hidden; /* スクロール境界の固定 */
+  overflow: hidden;
 }
 
-/* メッセージリスト（正しくスクロールする設定） */
+/* メッセージリスト */
 .message-list {
   flex: 1;
   padding: 16px;
@@ -218,7 +218,7 @@ body, html {
   font-size: 16px;
   line-height: 1.4;
   word-break: break-word;
-  white-space: pre-wrap; /* 改行の表示対応 */
+  white-space: pre-wrap !important; /* 強制改行 */
   position: relative;
   display: flex;
   flex-direction: column;
@@ -244,7 +244,7 @@ body, html {
   padding: 0;
 }
 
-/* メッセージメタ情報（既読＆送信日時） */
+/* メッセージメタ情報 */
 .msg-meta {
   display: flex;
   align-items: center;
@@ -263,7 +263,7 @@ body, html {
   color: #8e8e93;
 }
 
-/* 入力エリア（固定＆複数行自動伸縮） */
+/* 入力エリア */
 .chat-input-area {
   display: flex;
   align-items: flex-end;
@@ -271,7 +271,7 @@ body, html {
   padding: 10px 14px;
   background-color: #1c1c1e;
   border-top: 1px solid #2c2c2e;
-  flex-shrink: 0; /* 下部固定 */
+  flex-shrink: 0;
 }
 
 .chat-input-area.hidden-input {
@@ -403,15 +403,13 @@ body, html {
   color: #888;
   margin-top: 6px;
 }
-/* メッセージテキスト内で改行（\n）を正しく表示させる設定 */
-.msg-text,
-.reply-quote {
+
+/* ================= 改行表示の完全強制適用 ================= */
+#message-list .msg,
+#message-list .msg-text,
+#message-list .reply-quote,
+div[data-id] {
   white-space: pre-wrap !important;
   word-break: break-word !important;
-}
-
-/* カモフラージュ・入力欄の調整 */
-#chat-input {
-  resize: none;
-  overflow-y: auto;
+  overflow-wrap: anywhere !important;
 }
