@@ -36,10 +36,45 @@ function saveStoredMessages(messages) {
     return true;
   });
 
+  // 修正(原因2): iOS Safariはローカルストレージの上限がAndroid/PCより厳しいことが多く、
+  // 画像添付メッセージが積み重なると QuotaExceededError が発生する。
+  // 従来はここを catch(e){} で握りつぶしており、保存に失敗しても気づかず、
+  // 「相手には既読/クローズ済みなのに自分の端末には表示され続けない」データ消失が起きていた。
   try {
     localStorage.setItem('chat_history', JSON.stringify(filtered));
-  } catch(e) {}
-  return filtered;
+    return filtered;
+  } catch (e) {
+    console.error('localStorage保存エラー、古い添付ファイル付きメッセージを間引いて再試行します:', e);
+    // 古い順に、既読済み＋添付ファイル付きのメッセージからfileDataを間引く
+    const pruned = filtered
+      .slice()
+      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+      .map((m) => {
+        if (m.fileData && m.isRead) {
+          return { ...m, fileData: null, text: m.text || '[添付ファイルは容量超過のため削除されました]' };
+        }
+        return m;
+      });
+    try {
+      localStorage.setItem('chat_history', JSON.stringify(pruned));
+      return pruned;
+    } catch (e2) {
+      console.error('再試行後も保存に失敗しました:', e2);
+      return filtered;
+    }
+  }
+}
+
+// 修正(原因2): GitHubへの保存に失敗したメッセージをUI上で「送信失敗」と分かるようにする
+function markMessageAsFailed(msgId) {
+  const messages = getStoredMessages();
+  const target = messages.find(m => m.id === msgId);
+  if (target) {
+    target.sendFailed = true;
+    saveStoredMessages(messages);
+  }
+  const elem = document.querySelector(`[data-id="${msgId}"] .read-status-text`);
+  if (elem) elem.innerText = '送信失敗';
 }
 
 // 初期化処理
@@ -61,7 +96,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // チャット入力欄のGboard学習抑止（シークレット入力化）
   const chatInput = document.getElementById('chat-input');
   if (chatInput) {
-    chatInput.setAttribute('autocomplete', 'new-password');
+    chatInput.setAttribute('autocomplete', 'off');
     chatInput.setAttribute('autocorrect', 'off');
     chatInput.setAttribute('autocapitalize', 'off');
     chatInput.setAttribute('spellcheck', 'false');
@@ -185,6 +220,12 @@ function setupConnectionEvents() {
       
       if (isSecretActive) {
         activeConn.send({ type: 'read_ack', id: data.id });
+        // 修正(原因3): P2Pのack自体が届かない場合の保険として、
+        // 対応するGitHub Issueがあれば併せてクローズしておく（ベストエフォート）
+        const ghToken = GITHUB_CONFIG.getToken();
+        if (ghToken && typeof closeGitHubIssueByMsgId === 'function') {
+          closeGitHubIssueByMsgId(data.id, ghToken).catch(() => {});
+        }
       }
     } else if (data.type === 'read_ack') {
       markMyMessagesAsRead(data.id);
@@ -479,12 +520,16 @@ function renderSingleMessage(m) {
       html += `<div class="file-attachment"><a href="${m.fileData}" download="${escapeHtml(m.fileName)}" style="color:#64b5f6;font-size:14px;text-decoration:underline;">📎 📥 ${escapeHtml(m.fileName)} をダウンロード</a></div>`;
     }
   } else {
-    html += `<span class="msg-text">${escapeHtml(m.text)}</span>`;
+    // 修正(原因4): CSSのwhite-space:pre-wrapだけに依存すると、
+    // Service Workerの古いキャッシュが原因でCSS変更が反映されない環境でも改行が消えてしまう。
+    // ここで明示的に \n を <br> に変換しておくことで、CSSの状態に関わらず改行を保証する。
+    html += `<span class="msg-text">${escapeHtml(m.text).replace(/\n/g, '<br>')}</span>`;
   }
   
   html += `<div class="msg-meta">`;
   if (m.sender === 'me') {
-    html += `<span class="read-status-text">${m.isRead ? '既読' : '未読'}</span>`;
+    const statusText = m.sendFailed ? '送信失敗' : (m.isRead ? '既読' : '未読');
+    html += `<span class="read-status-text">${statusText}</span>`;
   }
   html += `<span class="msg-time">${formatTime(m.timestamp)}</span>`;
   html += `</div>`;
