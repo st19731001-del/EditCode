@@ -171,7 +171,8 @@ async function dispatchMessage(text, isStamp = false, fileObj = null) {
       if (typeof triggerPushNotification === 'function') {
         triggerPushNotification(
           '新着メッセージ',
-          isStamp ? 'スタンプが届きました' : (fileObj ? 'ファイルが届きました' : 'メッセージが届きました')
+          isStamp ? 'スタンプが届きました' : (fileObj ? 'ファイルが届きました' : 'メッセージが届きました'),
+          true // silent: 自動送信のためalert()は出さない
         ).catch(() => {});
       }
     }
