@@ -92,19 +92,27 @@
         <label for="file-input" style="cursor:pointer;font-size:20px;padding:0 4px;">📎</label>
         <input type="file" id="file-input" style="display:none;" onchange="handleFileSelect(event)">
 
-        <!-- Gboardシークレット化属性 (type="password" / autocomplete="new-password") -->
+        <!--
+          修正(原因5): <textarea>にtype="password"を指定してもHTML仕様上は無効な属性で
+          何の効果もない。Android/GboardのIMEは<input type="password">に対してのみ
+          「パスワード用テキスト」と判定して学習を止める仕組みになっており、
+          <textarea>（複数行入力）にはこの仕組みそのものが適用されない。
+          そのため、無効な属性は削除し、ブラウザが実際に解釈できる抑止系属性のみを残す。
+          ※ただし複数行(改行)入力を維持する以上、GboardのIME学習を100%止める
+          標準的なWeb APIは現状存在せず、これは「ベストエフォート」止まりであることに留意。
+        -->
         <textarea 
           id="chat-input" 
           rows="1" 
           placeholder="メッセージを入力..." 
-          type="password"
-          autocomplete="new-password" 
+          autocomplete="off"
           autocorrect="off" 
           autocapitalize="none" 
           spellcheck="false" 
           inputmode="text" 
           data-form-type="other" 
           data-lpignore="true"
+          data-1p-ignore="true"
         ></textarea>
         <button class="btn-send" onclick="sendMsg()">送信</button>
       </div>
