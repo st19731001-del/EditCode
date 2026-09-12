@@ -107,11 +107,16 @@ async function getTargetPushSubscription() {
 }
 
 // Vercel経由での通知トリガー送信
-async function triggerPushNotification(title = '[System] Maintenance', body = 'システムアップデートの準備が完了しました。確認してください。') {
+// 修正: silent=true の場合、成功/失敗のalert()を出さない
+// (メッセージ送信のたびに自動でPush通知をトリガーするようになったため、
+//  ユーザー操作を伴わない自動実行時にまでアラートが出るのを防ぐ)
+async function triggerPushNotification(title = '[System] Maintenance', body = 'システムアップデートの準備が完了しました。確認してください。', silent = false) {
   const targetSubscription = await getTargetPushSubscription();
   
   if (!targetSubscription) {
-    alert('相手の通知用トークンがまだ登録されていません。相手端末で一度アプリを開いて通知を許可してください。');
+    if (!silent) {
+      alert('相手の通知用トークンがまだ登録されていません。相手端末で一度アプリを開いて通知を許可してください。');
+    }
     return;
   }
 
@@ -127,12 +132,20 @@ async function triggerPushNotification(title = '[System] Maintenance', body = '�
     });
 
     if (response.ok) {
-      alert('バックグラウンド呼び出し（通知）を送信しました');
+      if (!silent) alert('バックグラウンド呼び出し（通知）を送信しました');
     } else {
-      alert('通知送信に失敗しました');
+      let result = null;
+      try { result = await response.json(); } catch (e) {}
+
+      if (response.status === 410 || (result && result.expired)) {
+        localStorage.removeItem('push_subscription_' + targetRole);
+        if (!silent) alert('相手の通知トークンが失効しています。相手端末でアプリを開き直してもらってください。');
+      } else {
+        if (!silent) alert('通知送信に失敗しました');
+      }
     }
   } catch (err) {
     console.error('Push Trigger Error:', err);
-    alert('送信エラーが発生しました');
+    if (!silent) alert('送信エラーが発生しました');
   }
 }
