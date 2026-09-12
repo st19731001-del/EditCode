@@ -1,11 +1,14 @@
-const CACHE_NAME = 'editcode-v2';
+const CACHE_NAME = 'editcode-v3';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
-  './app.js',
   './manifest.json',
-  './icon.png'
+  './icon.png',
+  './js/config.js',
+  './js/push.js',
+  './js/github.js',
+  './js/app.js'
 ];
 
 self.addEventListener('install', (event) => {
@@ -33,60 +36,17 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  if (
+    event.request.url.includes('api.github.com') ||
+    event.request.url.includes('vercel.app') ||
+    event.request.url.includes('peerjs')
+  ) {
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((response) => {
       return response || fetch(event.request);
-    })
-  );
-});
-
-// ================= プッシュ通知受信用ハンドラ =================
-self.addEventListener('push', function(event) {
-  let data = {
-    title: '[System] Maintenance',
-    body: 'システムアップデートの準備が完了しました',
-    icon: '/icon.png'
-  };
-
-  if (event.data) {
-    try {
-      data = event.data.json();
-    } catch (e) {
-      data.body = event.data.text();
-    }
-  }
-
-  const options = {
-    body: data.body,
-    icon: data.icon || '/icon.png',
-    badge: '/icon.png',
-    vibrate: [500, 200, 500],
-    data: {
-      dateOfArrival: Date.now(),
-      primaryKey: '1'
-    }
-  };
-
-  event.waitUntil(
-    self.registration.showNotification(data.title, options)
-  );
-});
-
-// 通知タップ時の挙動（アプリ画面を開く）
-self.addEventListener('notificationclick', function(event) {
-  event.notification.close();
-
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      for (let i = 0; i < clientList.length; i++) {
-        let client = clientList[i];
-        if (client.url && 'focus' in client) {
-          return client.focus();
-        }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow('/');
-      }
     })
   );
 });
