@@ -1,6 +1,6 @@
 // 修正: キャッシュ名にバージョンを付与し、資産パスの修正を確実に反映させる
 // （デプロイのたびにこの値を変えないと、古いキャッシュが永久に使われ続ける）
-const CACHE_NAME = 'editcode-v5-header-fix';
+const CACHE_NAME = 'editcode-v6-notification-sync';
 
 // 修正: 実際のファイル配置(js/配下)に合わせてパスを修正。
 // 旧: './app.js' のみを指定していたため404となり、cache.addAll()全体が失敗し
@@ -104,6 +104,11 @@ self.addEventListener('push', function(event) {
 
   event.waitUntil(
     self.registration.showNotification(data.title, options)
+      .then(() => {
+        if (typeof self.registration.setAppBadge === 'function') {
+          return self.registration.setAppBadge(1);
+        }
+      })
   );
 });
 

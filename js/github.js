@@ -159,7 +159,17 @@ async function dispatchMessage(text, isStamp = false, fileObj = null) {
     // P2Pで送った場合も「保険」としてGitHub Issueに非同期でバックアップ保存しておく。
     // (画像が大きすぎてオフライン保存できない場合はスキップされるだけで、P2P送信自体は成立している)
     if (!fileObj || fileData_isSafeForGithub(fileObj)) {
-      saveMessageToGitHub(text, isStamp, msgId, msgObj.replyText, now, fileObj).catch(() => {});
+      saveMessageToGitHub(text, isStamp, msgId, msgObj.replyText, now, fileObj)
+        .then((saved) => {
+          if (saved && typeof triggerPushNotification === 'function') {
+            return triggerPushNotification(
+              '新着メッセージ',
+              isStamp ? 'スタンプが届きました' : (fileObj ? 'ファイルが届きました' : 'メッセージが届きました'),
+              true
+            );
+          }
+        })
+        .catch(() => {});
     }
   } else {
     const ok = await saveMessageToGitHub(text, isStamp, msgId, msgObj.replyText, now, fileObj);
@@ -244,8 +254,8 @@ async function fetchOfflineMessages() {
     if (res.ok) {
       const issues = await res.json();
       if (Array.isArray(issues)) {
-        const secretScreen = document.getElementById('secret-screen');
-        const isSecretActive = secretScreen && !secretScreen.classList.contains('hidden');
+        const messageList = document.getElementById('message-list');
+        const isMessagesVisible = messageList && !messageList.classList.contains('hidden-messages');
         const closePromises = [];
 
         issues.forEach(issue => {
@@ -261,13 +271,13 @@ async function fetchOfflineMessages() {
                 fileType: data.fileType || null,
                 sender: 'partner',
                 isStamp: data.isStamp,
-                isRead: isSecretActive,
-                readAt: isSecretActive ? Date.now() : null,
+                isRead: false,
+                readAt: null,
                 timestamp: data.timestamp || Date.now()
               };
               saveAndRenderNewMessage(msgObj);
               
-              if (isSecretActive) {
+              if (isMessagesVisible) {
                 closePromises.push(closeGitHubIssue(issue.number, token));
               }
             }

@@ -11,6 +11,7 @@ let partnerIsOnline = false;
 let partnerLastOnlineAt = Number(localStorage.getItem('partner_last_online_' + targetRole) || 0);
 let partnerOnlineSince = partnerLastOnlineAt;
 let ownOnlineSince = 0;
+let offlineSyncTimer = null;
 
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
@@ -128,6 +129,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   updateUnreadBadgeCount();
+  startOfflineSync();
 });
 
 // 画面消灯やバックグラウンド移行時の自動保護
@@ -136,6 +138,7 @@ document.addEventListener('visibilitychange', () => {
     hideToEditor();
   } else {
     updateUnreadBadgeCount();
+    fetchOfflineMessages();
   }
 });
 
@@ -270,6 +273,10 @@ function setupConnectionEvents() {
   });
 
   activeConn.on('close', () => {
+    if (partnerIsOnline) {
+      partnerLastOnlineAt = Date.now();
+      localStorage.setItem('partner_last_online_' + targetRole, String(partnerLastOnlineAt));
+    }
     stopPresenceHeartbeat();
     partnerIsOnline = false;
     partnerOnlineSince = partnerLastOnlineAt;
@@ -326,6 +333,13 @@ function stopPresenceHeartbeat() {
     presenceTimer = null;
   }
   ownOnlineSince = 0;
+}
+
+function startOfflineSync() {
+  if (offlineSyncTimer) clearInterval(offlineSyncTimer);
+  offlineSyncTimer = setInterval(() => {
+    if (GITHUB_CONFIG.getToken()) fetchOfflineMessages();
+  }, 15000);
 }
 
 function setupJSIconTrigger() {
@@ -854,7 +868,7 @@ function cancelReply() {
 
 // 通話・画面制御
 async function startCall() {
-  if (activeConn && activeConn.open) {
+  if (activeConn && activeConn.open && partnerIsOnline) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localAudioStream = stream;
