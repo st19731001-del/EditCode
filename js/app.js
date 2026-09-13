@@ -6,6 +6,9 @@ let activeCall = null;
 let localAudioStream = null;
 let reconnectTimer = null;
 let wakeLock = null;
+let presenceTimer = null;
+let partnerIsOnline = false;
+let partnerLastOnlineAt = Number(localStorage.getItem('partner_last_online_' + targetRole) || 0);
 
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
@@ -13,6 +16,15 @@ let selectedMsgTarget = { text: '', id: '' };
 // 複数選択削除用状態管理
 let isSelectMode = false;
 let selectedMsgIds = new Set();
+let longPressTimer = null;
+
+function scrollMessageListToBottom() {
+  const list = document.getElementById('message-list');
+  if (!list) return;
+  requestAnimationFrame(() => {
+    list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
+  });
+}
 
 function getStoredMessages() {
   try {
@@ -196,10 +208,18 @@ function connectToPartner() {
 
 function setupConnectionEvents() {
   updateOnlineUI(true);
+  startPresenceHeartbeat();
   renderAllMessages();
 
   activeConn.on('data', (data) => {
-    if (data.type === 'chat') {
+    if (data.type === 'presence') {
+      partnerIsOnline = data.online !== false;
+      if (data.lastOnlineAt) {
+        partnerLastOnlineAt = data.lastOnlineAt;
+        localStorage.setItem('partner_last_online_' + targetRole, String(partnerLastOnlineAt));
+      }
+      updateOnlineUI(activeConn && activeConn.open);
+    } else if (data.type === 'chat') {
       const secretScreen = document.getElementById('secret-screen');
       const isSecretActive = secretScreen && !secretScreen.classList.contains('hidden');
       
@@ -241,6 +261,8 @@ function setupConnectionEvents() {
   });
 
   activeConn.on('close', () => {
+    stopPresenceHeartbeat();
+    partnerIsOnline = false;
     updateOnlineUI(false);
     activeConn = null;
     scheduleReconnect();
@@ -253,10 +275,34 @@ function updateOnlineUI(isOnline) {
 
   if (isOnline) {
     roleDisplay.style.cssText = 'background:#0d6efd;color:#ffffff;padding:4px 10px;border-radius:4px;font-weight:bold;display:inline-block;border:2px solid #ffca28;';
-    roleDisplay.innerText = `Me: ${myRole} | ⚡ ONLINE［リアルタイム通信］`;
+    roleDisplay.innerText = `Me: ${myRole} | ⚡ ONLINE［リアルタイム通信］ | 相手: ${partnerIsOnline ? 'ONLINE' : formatLastOnline()}`;
   } else {
     roleDisplay.style.cssText = 'background:#495057;color:#e0e0e0;padding:4px 10px;border-radius:4px;font-weight:normal;display:inline-block;border:1px solid #6c757d;';
-    roleDisplay.innerText = `Me: ${myRole} | 📴 OFFLINE［非同期DBモード］`;
+    roleDisplay.innerText = `Me: ${myRole} | 📴 OFFLINE［非同期DBモード］ | 相手: ${partnerIsOnline ? 'ONLINE' : formatLastOnline()}`;
+  }
+}
+
+function formatLastOnline() {
+  if (!partnerLastOnlineAt) return '最終オンライン: 不明';
+  return `最終オンライン: ${formatTime(partnerLastOnlineAt)}`;
+}
+
+function sendPresence() {
+  if (activeConn && activeConn.open) {
+    activeConn.send({ type: 'presence', online: true, lastOnlineAt: Date.now() });
+  }
+}
+
+function startPresenceHeartbeat() {
+  stopPresenceHeartbeat();
+  sendPresence();
+  presenceTimer = setInterval(sendPresence, 15000);
+}
+
+function stopPresenceHeartbeat() {
+  if (presenceTimer) {
+    clearInterval(presenceTimer);
+    presenceTimer = null;
   }
 }
 
@@ -349,6 +395,7 @@ function updateUnreadBadgeCount() {
     } else {
       commitBtn.innerText = 'Commit Changes';
     }
+    commitBtn.classList.toggle('has-unread', unreadCount > 0);
   }
 
   updateBadge(unreadCount);
@@ -475,7 +522,7 @@ function renderAllMessages() {
   const messages = saveStoredMessages(getStoredMessages());
   messages.forEach(m => renderSingleMessage(m));
   
-  list.scrollTop = list.scrollHeight;
+  scrollMessageListToBottom();
   updateUnreadBadgeCount();
 }
 
@@ -501,6 +548,9 @@ function renderSingleMessage(m) {
     }
     return;
   }
+
+  const row = document.createElement('div');
+  row.className = `msg-row ${m.sender === 'me' ? 'my-row' : 'partner-row'}`;
 
   const msgContainer = document.createElement('div');
   const className = m.sender === 'me' ? 'my-msg' : 'partner-msg';
@@ -535,7 +585,171 @@ function renderSingleMessage(m) {
   html += `</div>`;
 
   msgContainer.innerHTML += html;
-  list.appendChild(msgContainer);
+  const swipeDelete = document.createElement('button');
+  swipeDelete.className = 'swipe-delete-action';
+  swipeDelete.type = 'button';
+  swipeDelete.innerText = '削除';
+  swipeDelete.addEventListener('click', () => deleteMessageWithNotice(m.id));
+
+  row.appendChild(msgContainer);
+  row.appendChild(swipeDelete);
+  list.appendChild(row);
+  setupMessageGestures(msgContainer, row, m);
+}
+
+function setupMessageGestures(message, row, messageData) {
+  let startX = 0;
+  let startY = 0;
+  let swiping = false;
+
+  message.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    startX = event.clientX;
+    startY = event.clientY;
+    swiping = false;
+    message.classList.add('swiping');
+    longPressTimer = setTimeout(() => {
+      message.classList.remove('swiping');
+      openMessageMenu(messageData);
+    }, 550);
+  });
+
+  message.addEventListener('pointermove', (event) => {
+    const deltaX = event.clientX - startX;
+    const deltaY = event.clientY - startY;
+    if (Math.abs(deltaY) > 12 || Math.abs(deltaX) > 12) clearMessageLongPress();
+    if (deltaX < -12 && Math.abs(deltaX) > Math.abs(deltaY)) {
+      swiping = true;
+      message.style.transform = `translateX(${Math.max(deltaX, -86)}px)`;
+      row.classList.toggle('swipe-open', deltaX < -44);
+    }
+  });
+
+  message.addEventListener('pointerup', (event) => {
+    clearMessageLongPress();
+    message.classList.remove('swiping');
+    if (swiping) {
+      const deltaX = event.clientX - startX;
+      if (deltaX < -44) {
+        message.style.transform = 'translateX(-72px)';
+        row.classList.add('swipe-open');
+      } else {
+        closeSwipeRow(message, row);
+      }
+    }
+  });
+
+  message.addEventListener('pointercancel', () => {
+    clearMessageLongPress();
+    closeSwipeRow(message, row);
+  });
+
+  message.addEventListener('click', () => {
+    if (isSelectMode) toggleSelectedMessage(messageData.id);
+  });
+
+  message.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    openMessageMenu(messageData);
+  });
+}
+
+function clearMessageLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+}
+
+function closeSwipeRow(message, row) {
+  message.style.transform = '';
+  row.classList.remove('swipe-open');
+}
+
+function openMessageMenu(message) {
+  selectedMsgTarget = { text: message.text || '', id: message.id };
+  const sheet = document.getElementById('action-sheet');
+  if (sheet) sheet.classList.remove('hidden');
+}
+
+function closeActionSheet() {
+  const sheet = document.getElementById('action-sheet');
+  if (sheet) sheet.classList.add('hidden');
+}
+
+async function handleMenuCopy() {
+  const text = selectedMsgTarget.text || '';
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    const helper = document.createElement('textarea');
+    helper.value = text;
+    document.body.appendChild(helper);
+    helper.select();
+    document.execCommand('copy');
+    helper.remove();
+  }
+  closeActionSheet();
+}
+
+function handleMenuReply() {
+  currentReplyTo = { ...selectedMsgTarget };
+  const preview = document.getElementById('reply-preview');
+  const replyText = document.getElementById('reply-text');
+  if (replyText) replyText.innerText = selectedMsgTarget.text || '添付ファイル';
+  if (preview) preview.classList.remove('hidden');
+  closeActionSheet();
+  document.getElementById('chat-input')?.focus();
+}
+
+function handleMenuDelete() {
+  const id = selectedMsgTarget.id;
+  closeActionSheet();
+  if (id && confirm('このメッセージを削除しますか？')) deleteMessageWithNotice(id);
+}
+
+function handleMenuSelectDelete() {
+  isSelectMode = true;
+  selectedMsgIds = new Set([selectedMsgTarget.id]);
+  closeActionSheet();
+  updateSelectionUI();
+}
+
+function toggleSelectedMessage(id) {
+  if (!isSelectMode) return;
+  if (selectedMsgIds.has(id)) selectedMsgIds.delete(id);
+  else selectedMsgIds.add(id);
+  updateSelectionUI();
+}
+
+function updateSelectionUI() {
+  document.querySelectorAll('.msg[data-id]').forEach((message) => {
+    message.classList.toggle('selected', selectedMsgIds.has(message.dataset.id));
+  });
+  const toolbar = document.getElementById('selection-toolbar');
+  const count = document.getElementById('selection-count');
+  if (toolbar) toolbar.classList.toggle('hidden', !isSelectMode);
+  if (count) count.innerText = `${selectedMsgIds.size}件選択中`;
+}
+
+function cancelSelectMode() {
+  isSelectMode = false;
+  selectedMsgIds.clear();
+  updateSelectionUI();
+}
+
+function deleteSelectedMessages() {
+  if (!selectedMsgIds.size) return;
+  if (!confirm(`${selectedMsgIds.size}件のメッセージを削除しますか？`)) return;
+  const ids = Array.from(selectedMsgIds);
+  ids.forEach(deleteLocalMessage);
+  if (activeConn && activeConn.open) activeConn.send({ type: 'delete_multiple', ids });
+  cancelSelectMode();
+}
+
+function deleteMessageWithNotice(msgId) {
+  deleteLocalMessage(msgId);
+  if (activeConn && activeConn.open) activeConn.send({ type: 'delete', id: msgId });
 }
 
 function downloadFile(dataUrl, fileName) {
@@ -585,8 +799,9 @@ function deleteLocalMessage(msgId) {
   messages = messages.filter(m => m.id !== msgId);
   saveStoredMessages(messages);
   const elem = document.querySelector(`[data-id="${msgId}"]`);
-  if (elem) elem.remove();
+  if (elem) elem.closest('.msg-row')?.remove();
   updateUnreadBadgeCount();
+  scrollMessageListToBottom();
 }
 
 function updateBadge(count) {
@@ -623,7 +838,14 @@ async function startCall() {
     }
   } else {
     if (confirm('相手がオフラインです。「システムアップデート」の呼び出し通知を送信しますか？')) {
-      await triggerPushNotification();
+      const sent = await triggerPushNotification(
+        'GitHub Action Notification',
+        'EditCode: commit and build completed successfully.',
+        true
+      );
+      if (sent) {
+        alert('相手がオフラインのため呼び出し通知を送信しました');
+      }
     }
   }
 }
@@ -687,7 +909,7 @@ function appendSystemMsg(text) {
   msg.className = 'system-msg';
   msg.innerText = text;
   list.appendChild(msg);
-  list.scrollTop = list.scrollHeight;
+  scrollMessageListToBottom();
 }
 
 function switchToSecret() {

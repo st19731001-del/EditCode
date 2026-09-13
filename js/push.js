@@ -117,7 +117,7 @@ async function triggerPushNotification(title = '[System] Maintenance', body = '�
     if (!silent) {
       alert('相手の通知用トークンがまだ登録されていません。相手端末で一度アプリを開いて通知を許可してください。');
     }
-    return;
+    return false;
   }
 
   try {
@@ -133,6 +133,7 @@ async function triggerPushNotification(title = '[System] Maintenance', body = '�
 
     if (response.ok) {
       if (!silent) alert('バックグラウンド呼び出し（通知）を送信しました');
+      return true;
     } else {
       let result = null;
       try { result = await response.json(); } catch (e) {}
@@ -143,9 +144,11 @@ async function triggerPushNotification(title = '[System] Maintenance', body = '�
       } else {
         if (!silent) alert('通知送信に失敗しました');
       }
+      return false;
     }
   } catch (err) {
     console.error('Push Trigger Error:', err);
     if (!silent) alert('送信エラーが発生しました');
+    return false;
   }
 }

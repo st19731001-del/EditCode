@@ -130,6 +130,12 @@
     </div>
   </div>
 
+  <div id="selection-toolbar" class="selection-toolbar hidden">
+    <span id="selection-count">0件選択中</span>
+    <button class="action-btn danger" onclick="deleteSelectedMessages()">選択したメッセージを削除</button>
+    <button class="action-btn" onclick="cancelSelectMode()">キャンセル</button>
+  </div>
+
   <!-- トースト通知 -->
   <div id="dummy-toast" class="hidden"></div>
 

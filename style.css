@@ -71,6 +71,7 @@ html, body {
 }
 
 .btn-commit {
+  position: relative;
   background-color: #2da44e;
   color: #ffffff;
   border: none;
@@ -81,6 +82,18 @@ html, body {
   cursor: pointer;
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+.btn-commit.has-unread::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #252526;
+  border-radius: 50%;
+  background-color: #ff453a;
 }
 
 .github-box {
@@ -236,6 +249,21 @@ html, body {
   gap: 12px;
 }
 
+.msg-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+  overflow: visible;
+}
+
+.msg-row.my-row {
+  justify-content: flex-end;
+}
+
+.msg-row.partner-row {
+  justify-content: flex-start;
+}
+
 .hidden-messages .msg,
 .hidden-messages .system-msg {
   display: none !important;
@@ -259,6 +287,45 @@ html, body {
   position: relative;
   display: flex;
   flex-direction: column;
+  transition: transform 160ms ease, opacity 160ms ease;
+  touch-action: pan-y;
+  user-select: none;
+  z-index: 1;
+}
+
+.msg.swiping {
+  transition: none;
+}
+
+.msg.selected {
+  outline: 2px solid #ffca28;
+  outline-offset: 3px;
+}
+
+.swipe-delete-action {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 72px;
+  border: 0;
+  border-radius: 10px;
+  background: #dc3545;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.msg-row.swipe-open .swipe-delete-action {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.msg-row.partner-row .swipe-delete-action {
+  left: 0;
+  right: auto;
 }
 
 .my-msg {
@@ -421,6 +488,33 @@ html, body {
 
 .action-btn.danger {
   color: #ff453a;
+}
+
+.selection-toolbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1900;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #1c1c1e;
+  border-top: 1px solid #444;
+}
+
+.selection-toolbar span {
+  margin-right: auto;
+  color: #fff;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.selection-toolbar .action-btn {
+  width: auto;
+  padding: 10px 12px;
+  font-size: 14px;
 }
 
 /* 未読丸数字バッジ（将来用: 現状HTMLにid="unread-badge"要素は無いが、
