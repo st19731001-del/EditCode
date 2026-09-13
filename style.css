@@ -185,6 +185,8 @@ html, body {
   padding: 0 14px;
   border-bottom: 1px solid #2c2c2e;
   flex-shrink: 0;
+  overflow: hidden;
+  gap: 8px;
 }
 
 .header-left {
@@ -192,6 +194,15 @@ html, body {
   align-items: center;
   gap: 10px;
   overflow: hidden;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .btn-icon {
@@ -202,11 +213,17 @@ html, body {
   border-radius: 6px;
   font-size: 18px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 #role-display {
   font-size: 13px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 100%;
+  display: inline-block;
 }
 
 /* メッセージ一覧 */
