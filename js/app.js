@@ -9,6 +9,8 @@ let wakeLock = null;
 let presenceTimer = null;
 let partnerIsOnline = false;
 let partnerLastOnlineAt = Number(localStorage.getItem('partner_last_online_' + targetRole) || 0);
+let partnerOnlineSince = partnerLastOnlineAt;
+let ownOnlineSince = 0;
 
 let currentReplyTo = null;
 let selectedMsgTarget = { text: '', id: '' };
@@ -124,12 +126,16 @@ window.addEventListener('DOMContentLoaded', () => {
   if (sessionStorage.getItem('open_secret_screen') === 'true') {
     switchToSecret();
   }
+
+  updateUnreadBadgeCount();
 });
 
 // 画面消灯やバックグラウンド移行時の自動保護
 document.addEventListener('visibilitychange', () => {
   if (document.hidden || document.visibilityState === 'hidden') {
     hideToEditor();
+  } else {
+    updateUnreadBadgeCount();
   }
 });
 
@@ -213,9 +219,12 @@ function setupConnectionEvents() {
 
   activeConn.on('data', (data) => {
     if (data.type === 'presence') {
+      const wasOnline = partnerIsOnline;
       partnerIsOnline = data.online !== false;
-      if (data.lastOnlineAt) {
-        partnerLastOnlineAt = data.lastOnlineAt;
+      const presenceTime = data.onlineSince || data.lastOnlineAt;
+      if (presenceTime) {
+        if (!wasOnline || !partnerOnlineSince) partnerOnlineSince = presenceTime;
+        partnerLastOnlineAt = presenceTime;
         localStorage.setItem('partner_last_online_' + targetRole, String(partnerLastOnlineAt));
       }
       updateOnlineUI(activeConn && activeConn.open);
@@ -263,6 +272,7 @@ function setupConnectionEvents() {
   activeConn.on('close', () => {
     stopPresenceHeartbeat();
     partnerIsOnline = false;
+    partnerOnlineSince = partnerLastOnlineAt;
     updateOnlineUI(false);
     activeConn = null;
     scheduleReconnect();
@@ -275,11 +285,16 @@ function updateOnlineUI(isOnline) {
 
   if (isOnline) {
     roleDisplay.style.cssText = 'background:#0d6efd;color:#ffffff;padding:4px 10px;border-radius:4px;font-weight:bold;display:inline-block;border:2px solid #ffca28;';
-    roleDisplay.innerText = `Me: ${myRole} | ⚡ ONLINE［リアルタイム通信］ | 相手: ${partnerIsOnline ? 'ONLINE' : formatLastOnline()}`;
+    roleDisplay.innerText = `Me: ${myRole} | ⚡ ONLINE［リアルタイム通信］ | 相手: ${partnerIsOnline ? formatOnlineSince() : formatLastOnline()}`;
   } else {
     roleDisplay.style.cssText = 'background:#495057;color:#e0e0e0;padding:4px 10px;border-radius:4px;font-weight:normal;display:inline-block;border:1px solid #6c757d;';
-    roleDisplay.innerText = `Me: ${myRole} | 📴 OFFLINE［非同期DBモード］ | 相手: ${partnerIsOnline ? 'ONLINE' : formatLastOnline()}`;
+    roleDisplay.innerText = `Me: ${myRole} | 📴 OFFLINE［非同期DBモード］ | 相手: ${partnerIsOnline ? formatOnlineSince() : formatLastOnline()}`;
   }
+}
+
+function formatOnlineSince() {
+  if (!partnerOnlineSince) return 'ONLINE';
+  return `ONLINE（${formatTime(partnerOnlineSince)}から）`;
 }
 
 function formatLastOnline() {
@@ -289,7 +304,13 @@ function formatLastOnline() {
 
 function sendPresence() {
   if (activeConn && activeConn.open) {
-    activeConn.send({ type: 'presence', online: true, lastOnlineAt: Date.now() });
+    if (!ownOnlineSince) ownOnlineSince = Date.now();
+    activeConn.send({
+      type: 'presence',
+      online: true,
+      onlineSince: ownOnlineSince,
+      lastOnlineAt: ownOnlineSince
+    });
   }
 }
 
@@ -304,6 +325,7 @@ function stopPresenceHeartbeat() {
     clearInterval(presenceTimer);
     presenceTimer = null;
   }
+  ownOnlineSince = 0;
 }
 
 function setupJSIconTrigger() {
@@ -534,6 +556,7 @@ function saveAndRenderNewMessage(msgObj) {
   }
   
   renderAllMessages();
+  updateUnreadBadgeCount();
 }
 
 function renderSingleMessage(m) {
@@ -805,12 +828,16 @@ function deleteLocalMessage(msgId) {
 }
 
 function updateBadge(count) {
-  if ('setAppBadge' in navigator) {
-    if (count > 0) {
-      navigator.setAppBadge(count);
-    } else {
-      navigator.clearAppBadge();
-    }
+  if (typeof navigator.setAppBadge !== 'function') return;
+
+  const badgeAction = count > 0
+    ? navigator.setAppBadge(count)
+    : (typeof navigator.clearAppBadge === 'function' ? navigator.clearAppBadge() : null);
+
+  if (badgeAction && typeof badgeAction.catch === 'function') {
+    badgeAction.catch((error) => {
+      console.warn('アプリアイコンのバッジ更新に失敗しました:', error);
+    });
   }
 }
 
