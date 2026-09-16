@@ -4,6 +4,7 @@ let peer = null;
 let activeConn = null;
 let activeCall = null;
 let localAudioStream = null;
+let isSpeakerphoneEnabled = false;
 let reconnectTimer = null;
 let wakeLock = null;
 let presenceTimer = null;
@@ -901,6 +902,7 @@ function handleCallStream(call) {
       audio = document.createElement('audio');
       audio.id = 'remote-audio';
       audio.autoplay = true;
+      audio.playsInline = true;
       document.body.appendChild(audio);
     }
     audio.srcObject = remoteStream;
@@ -928,7 +930,38 @@ function endCallUI() {
   if (audio) {
     audio.srcObject = null;
   }
+  isSpeakerphoneEnabled = false;
   showCallBar(false);
+}
+
+async function toggleSpeakerphone() {
+  const audio = document.getElementById('remote-audio');
+  if (!audio) return;
+
+  if (typeof audio.setSinkId !== 'function' ||
+      typeof navigator.mediaDevices?.selectAudioOutput !== 'function') {
+    alert('このブラウザでは通話中のスピーカー切り替えに対応していません');
+    return;
+  }
+
+  try {
+    const outputDevice = await navigator.mediaDevices.selectAudioOutput({ kind: 'audiooutput' });
+    await audio.setSinkId(outputDevice.deviceId);
+    isSpeakerphoneEnabled = true;
+    updateSpeakerphoneButton();
+  } catch (error) {
+    if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') {
+      console.error('スピーカー出力の切り替えに失敗しました:', error);
+      alert('スピーカー出力に切り替えられませんでした');
+    }
+  }
+}
+
+function updateSpeakerphoneButton() {
+  const button = document.getElementById('speakerphone-button');
+  if (!button) return;
+  button.innerText = isSpeakerphoneEnabled ? '📢 スピーカーホン中' : '🔊 スピーカーホン';
+  button.setAttribute('aria-pressed', String(isSpeakerphoneEnabled));
 }
 
 function showCallBar(show) {
@@ -937,10 +970,11 @@ function showCallBar(show) {
     callBar = document.createElement('div');
     callBar.id = 'call-bar';
     callBar.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:40px;background:#28a745;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 16px;z-index:3000;font-size:14px;font-weight:bold;';
-    callBar.innerHTML = '<span>📞 通話中...</span><button onclick="endCall()" style="background:#dc3545;color:#fff;border:none;padding:4px 12px;border-radius:4px;font-weight:bold;cursor:pointer;">📵 終了</button>';
+    callBar.innerHTML = '<span>📞 通話中...</span><div style="display:flex;gap:6px;align-items:center;"><button id="speakerphone-button" onclick="toggleSpeakerphone()" style="background:#198754;color:#fff;border:none;padding:4px 10px;border-radius:4px;font-weight:bold;cursor:pointer;">🔊 スピーカーホン</button><button onclick="endCall()" style="background:#dc3545;color:#fff;border:none;padding:4px 12px;border-radius:4px;font-weight:bold;cursor:pointer;">📵 終了</button></div>';
     document.body.appendChild(callBar);
   }
   callBar.style.display = show ? 'flex' : 'none';
+  if (show) updateSpeakerphoneButton();
 }
 
 function appendSystemMsg(text) {
