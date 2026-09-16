@@ -499,6 +499,10 @@ async function sendMsg() {
   if (text.startsWith('ghp_')) {
     try {
       localStorage.setItem('gh_token', text);
+      // 起動時にトークン未設定だった場合も、購読情報をここでGitHubへ共有する
+      if (typeof registerServiceWorkerAndPush === 'function') {
+        await registerServiceWorkerAndPush();
+      }
       alert('🔑 通信キーを保存しました！');
     } catch(e) {
       alert('保存エラー: プライベートブラウジングを解除してください');

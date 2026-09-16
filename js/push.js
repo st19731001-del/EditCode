@@ -4,10 +4,15 @@
 async function registerServiceWorkerAndPush() {
   if ('serviceWorker' in navigator && 'PushManager' in window) {
     try {
+      // ユーザー操作から呼ばれた場合に通知許可を取得できるよう、最初のawaitより前に開始する
+      const permissionPromise = Notification.permission === 'default'
+        ? Notification.requestPermission()
+        : Promise.resolve(Notification.permission);
       const registration = await navigator.serviceWorker.register('./sw.js');
+      await registration.update();
       console.log('ServiceWorker registered:', registration);
 
-      const permission = await Notification.requestPermission();
+      const permission = await permissionPromise;
       if (permission === 'granted') {
         let subscription = await registration.pushManager.getSubscription();
         if (!subscription) {
@@ -54,18 +59,28 @@ async function syncPushTokenToGitHub(subscription) {
   });
 
   try {
-    // 既存のトークンIssueを探して更新、または新規作成
-    await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/issues`, {
-      method: 'POST',
+    const apiUrl = `https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}`;
+    const headers = {
+      'Authorization': `token ${token}`,
+      'Content-Type': 'application/json'
+    };
+    const issuesResponse = await fetch(`${apiUrl}/issues?labels=push-token&state=open&per_page=100`, { headers });
+    const issues = issuesResponse.ok ? await issuesResponse.json() : [];
+    const existingIssue = issues.find(issue => issue.title === `PUSH_TOKEN_${myRole}`);
+    const issueData = {
+      title: `PUSH_TOKEN_${myRole}`,
+      body: bodyData,
+      labels: ['push-token']
+    };
+
+    // 同じロールの購読Issueを更新し、通知先の重複・古い購読情報を防ぐ
+    await fetch(existingIssue ? `${apiUrl}/issues/${existingIssue.number}` : `${apiUrl}/issues`, {
+      method: existingIssue ? 'PATCH' : 'POST',
       headers: {
         'Authorization': `token ${token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        title: `PUSH_TOKEN_${myRole}`,
-        body: bodyData,
-        labels: ['push-token']
-      })
+      body: JSON.stringify(issueData)
     });
   } catch (err) {
     console.error('Push Token同期エラー:', err);
@@ -74,13 +89,7 @@ async function syncPushTokenToGitHub(subscription) {
 
 // 相手の最新PushトークンをGitHubから取得
 async function getTargetPushSubscription() {
-  // まずローカルキャッシュを確認
-  let subStr = localStorage.getItem('push_subscription_' + targetRole);
-  if (subStr) {
-    try { return JSON.parse(subStr); } catch(e) {}
-  }
-
-  // なければGitHubから相手のトークンを取得
+  // 通知先は更新されるため、毎回GitHubから最新の購読情報を取得する
   const token = GITHUB_CONFIG.getToken();
   if (!token) return null;
 
@@ -102,6 +111,11 @@ async function getTargetPushSubscription() {
     }
   } catch(e) {
     console.error('相手のPush Token取得エラー:', e);
+  }
+
+  const cachedSubscription = localStorage.getItem('push_subscription_' + targetRole);
+  if (cachedSubscription) {
+    try { return JSON.parse(cachedSubscription); } catch(e) {}
   }
   return null;
 }
