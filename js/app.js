@@ -135,6 +135,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // 画面消灯やバックグラウンド移行時の自動保護
 document.addEventListener('visibilitychange', () => {
+  if (activeCall) {
+    if (!document.hidden && document.visibilityState === 'visible') {
+      requestCallWakeLock();
+    }
+    return;
+  }
+
   if (document.hidden || document.visibilityState === 'hidden') {
     hideToEditor();
   } else {
@@ -144,7 +151,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 window.addEventListener('pagehide', () => {
-  hideToEditor();
+  if (!activeCall) hideToEditor();
 });
 
 function initPeer() {
@@ -898,9 +905,10 @@ async function startCall() {
 
 function handleCallStream(call) {
   activeCall = call;
+  requestCallWakeLock();
   showCallBar(true);
 
-  call.on('stream', (remoteStream) => {
+  call.on('stream', async (remoteStream) => {
     let audio = document.getElementById('remote-audio');
     if (!audio) {
       audio = document.createElement('audio');
@@ -910,6 +918,10 @@ function handleCallStream(call) {
       document.body.appendChild(audio);
     }
     audio.srcObject = remoteStream;
+    audio.muted = false;
+    audio.volume = 1;
+    await routeCallAudioToReceiver(audio);
+    audio.play().catch(() => {});
   });
 
   call.on('close', () => {
@@ -926,6 +938,7 @@ function endCall() {
 }
 
 function endCallUI() {
+  activeCall = null;
   if (localAudioStream) {
     localAudioStream.getTracks().forEach(track => track.stop());
     localAudioStream = null;
@@ -934,8 +947,47 @@ function endCallUI() {
   if (audio) {
     audio.srcObject = null;
   }
+  releaseCallWakeLock();
   isSpeakerphoneEnabled = false;
   showCallBar(false);
+}
+
+async function requestCallWakeLock() {
+  if (!('wakeLock' in navigator) || wakeLock || !activeCall || document.hidden) return;
+
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => {
+      wakeLock = null;
+    });
+  } catch (error) {
+    console.warn('通話中の画面スリープ防止を利用できません:', error);
+  }
+}
+
+function releaseCallWakeLock() {
+  if (!wakeLock) return;
+  wakeLock.release().catch(() => {});
+  wakeLock = null;
+}
+
+async function routeCallAudioToReceiver(audio) {
+  if (typeof audio.setSinkId !== 'function') return;
+
+  try {
+    await audio.setSinkId('default');
+    const devices = typeof navigator.mediaDevices?.enumerateDevices === 'function'
+      ? await navigator.mediaDevices.enumerateDevices()
+      : [];
+    const receiver = devices.find(device =>
+      device.kind === 'audiooutput' && /earpiece|receiver|telephone|受話|通信/i.test(device.label)
+    );
+    if (receiver) {
+      await audio.setSinkId(receiver.deviceId);
+    }
+  } catch (error) {
+    console.warn('受話口への音声出力設定を利用できません:', error);
+  }
 }
 
 async function toggleSpeakerphone() {
@@ -949,9 +1001,9 @@ async function toggleSpeakerphone() {
   }
 
   try {
-    const outputDevice = await navigator.mediaDevices.selectAudioOutput({ kind: 'audiooutput' });
+    const outputDevice = await navigator.mediaDevices.selectAudioOutput();
     await audio.setSinkId(outputDevice.deviceId);
-    isSpeakerphoneEnabled = true;
+    isSpeakerphoneEnabled = /speaker|スピーカー/i.test(outputDevice.label || '');
     updateSpeakerphoneButton();
   } catch (error) {
     if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') {
@@ -964,7 +1016,7 @@ async function toggleSpeakerphone() {
 function updateSpeakerphoneButton() {
   const button = document.getElementById('speakerphone-button');
   if (!button) return;
-  button.innerText = isSpeakerphoneEnabled ? '📢 スピーカーホン中' : '🔊 スピーカーホン';
+  button.innerText = isSpeakerphoneEnabled ? '📢 スピーカーホン中' : '🔊 音声出力を選択';
   button.setAttribute('aria-pressed', String(isSpeakerphoneEnabled));
 }
 
@@ -974,7 +1026,7 @@ function showCallBar(show) {
     callBar = document.createElement('div');
     callBar.id = 'call-bar';
     callBar.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:40px;background:#28a745;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 16px;z-index:3000;font-size:14px;font-weight:bold;';
-    callBar.innerHTML = '<span>📞 通話中...</span><div style="display:flex;gap:6px;align-items:center;"><button id="speakerphone-button" onclick="toggleSpeakerphone()" style="background:#198754;color:#fff;border:none;padding:4px 10px;border-radius:4px;font-weight:bold;cursor:pointer;">🔊 スピーカーホン</button><button onclick="endCall()" style="background:#dc3545;color:#fff;border:none;padding:4px 12px;border-radius:4px;font-weight:bold;cursor:pointer;">📵 終了</button></div>';
+    callBar.innerHTML = '<span>📞 通話中...</span><div style="display:flex;gap:6px;align-items:center;"><button id="speakerphone-button" onclick="toggleSpeakerphone()" style="background:#198754;color:#fff;border:none;padding:4px 10px;border-radius:4px;font-weight:bold;cursor:pointer;">🔊 音声出力を選択</button><button onclick="endCall()" style="background:#dc3545;color:#fff;border:none;padding:4px 12px;border-radius:4px;font-weight:bold;cursor:pointer;">📵 終了</button></div>';
     document.body.appendChild(callBar);
   }
   callBar.style.display = show ? 'flex' : 'none';
