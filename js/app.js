@@ -531,11 +531,17 @@ async function sendMsg() {
   if (palette) palette.classList.add('hidden');
 }
 
-async function sendStamp(emoji) {
-  await dispatchMessage(emoji, true);
-  cancelReply();
-  const palette = document.getElementById('stamp-palette');
-  if (palette) palette.classList.add('hidden');
+function sendStamp(emoji) {
+  const input = document.getElementById('chat-input');
+  if (!input) return;
+
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? start;
+  input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
+  const cursorPosition = start + emoji.length;
+  input.focus();
+  input.setSelectionRange(cursorPosition, cursorPosition);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function formatTime(timestamp) {

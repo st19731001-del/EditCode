@@ -380,7 +380,24 @@ html, body {
 }
 
 .stamp-item {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+  line-height: 1.2;
   cursor: pointer;
+}
+
+.stamp-item:focus-visible {
+  outline: 2px solid #64b5f6;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.stamp-item.kaomoji {
+  font-size: 15px;
+  white-space: nowrap;
 }
 
 /* 入力エリア */
