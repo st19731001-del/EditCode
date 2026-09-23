@@ -172,15 +172,24 @@ function initPeer() {
   });
 
   peer.on('call', async (call) => {
+    if (activeCall) {
+      call.close();
+      return;
+    }
     if (confirm('📞 通話の着信があります。応答しますか？')) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await getCallAudioStream();
         localAudioStream = stream;
         call.answer(stream);
         handleCallStream(call);
       } catch (e) {
-        alert('マイクのアクセス許可が必要です');
+        call.close();
+        stopLocalAudioStream();
+        console.error('着信への応答に失敗しました:', e);
+        alert(getCallErrorMessage(e));
       }
+    } else {
+      call.close();
     }
   });
 
@@ -886,14 +895,21 @@ function cancelReply() {
 
 // 通話・画面制御
 async function startCall() {
-  if (activeConn && activeConn.open && partnerIsOnline) {
+  if (activeCall) return;
+
+  if (activeConn && activeConn.open && partnerIsOnline && peer && !peer.destroyed) {
+    let stream = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await getCallAudioStream();
       localAudioStream = stream;
       const call = peer.call(targetRole, stream);
+      if (!call) throw new Error('PeerJSが通話を開始できませんでした');
       handleCallStream(call);
     } catch (err) {
-      alert('マイクのアクセス許可が必要です');
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      localAudioStream = null;
+      console.error('発信に失敗しました:', err);
+      alert(getCallErrorMessage(err));
     }
   } else {
     if (confirm('相手がオフラインです。「システムアップデート」の呼び出し通知を送信しますか？')) {
@@ -909,7 +925,31 @@ async function startCall() {
   }
 }
 
+async function getCallAudioStream() {
+  if (!window.isSecureContext || !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getUserMedia !== 'function') {
+    throw new Error('マイクを利用できる安全な接続（HTTPS）が必要です');
+  }
+  return navigator.mediaDevices.getUserMedia({ audio: true });
+}
+
+function getCallErrorMessage(error) {
+  if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+    return 'マイクのアクセス許可が必要です。ブラウザのサイト設定でマイクを許可してください';
+  }
+  if (error?.name === 'NotFoundError') return 'マイクが見つかりません';
+  if (error?.name === 'NotReadableError') return 'マイクを別のアプリが使用中です';
+  return error?.message || '通話を開始できませんでした。相手の接続状態を確認してください';
+}
+
+function stopLocalAudioStream() {
+  if (!localAudioStream) return;
+  localAudioStream.getTracks().forEach(track => track.stop());
+  localAudioStream = null;
+}
+
 function handleCallStream(call) {
+  if (activeCall && activeCall !== call) activeCall.close();
   activeCall = call;
   requestCallWakeLock();
   showCallBar(true);
@@ -931,7 +971,15 @@ function handleCallStream(call) {
   });
 
   call.on('close', () => {
-    endCallUI();
+    if (activeCall === call) endCallUI();
+  });
+
+  call.on('error', (error) => {
+    console.error('通話接続エラー:', error);
+    if (activeCall === call) {
+      endCallUI();
+      alert(getCallErrorMessage(error));
+    }
   });
 }
 
@@ -945,10 +993,7 @@ function endCall() {
 
 function endCallUI() {
   activeCall = null;
-  if (localAudioStream) {
-    localAudioStream.getTracks().forEach(track => track.stop());
-    localAudioStream = null;
-  }
+  stopLocalAudioStream();
   const audio = document.getElementById('remote-audio');
   if (audio) {
     audio.srcObject = null;
