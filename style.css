@@ -1,4 +1,4 @@
-/* ================= 全体・共通設定 ================= */
+﻿/* ================= 全体・共通設定 ================= */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -568,4 +568,300 @@ div[data-id] {
   border-left: 2px solid rgba(255,255,255,0.4);
   padding-left: 6px;
   margin-bottom: 4px;
+}
+
+/* ================= 通話機能（通話バー・発信着信モーダル・音響制御） ================= */
+
+/* 通話中バー */
+.call-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  background: linear-gradient(135deg, #1b4d24, #0f3318);
+  border-bottom: 1px solid #28a745;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  z-index: 3000;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  font-size: 14px;
+}
+
+.call-bar-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.call-pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #2da44e;
+  box-shadow: 0 0 8px #2da44e;
+  animation: pulse-dot 1.5s infinite;
+  flex-shrink: 0;
+}
+
+@keyframes pulse-dot {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.7; }
+}
+
+.call-mode-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.call-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-call-mode {
+  background: #21262d;
+  color: #ffffff;
+  border: 1px solid #484f58;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.btn-call-mode:hover, .btn-call-mode:active {
+  background: #30363d;
+  border-color: #8b949e;
+}
+
+.btn-call-end {
+  background: #eb3b5a;
+  color: #ffffff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.btn-call-end:active {
+  background: #c23616;
+}
+
+/* 発信・着信モーダル共通オーバーレイ */
+.call-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3100;
+  padding: 18px;
+}
+
+.call-modal-card {
+  width: 100%;
+  max-width: 380px;
+  background-color: #1c1c1e;
+  border: 1px solid #333336;
+  border-radius: 18px;
+  padding: 24px 20px 20px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.75);
+  text-align: center;
+  animation: modal-fade-scale 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+@keyframes modal-fade-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.call-modal-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.call-modal-icon {
+  font-size: 42px;
+  line-height: 1;
+  display: inline-block;
+}
+
+.call-modal-header h3 {
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.call-modal-desc {
+  color: #8e8e93;
+  font-size: 13px;
+  margin: 6px 0 20px;
+  line-height: 1.4;
+}
+
+.call-modal-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn-call-action {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.btn-call-normal {
+  background: #1f2733;
+  border: 1px solid #2f5486;
+}
+
+.btn-call-normal:hover, .btn-call-normal:active {
+  background: #273446;
+  border-color: #388bfd;
+}
+
+.btn-call-speaker {
+  background: #2a241b;
+  border: 1px solid #734c1b;
+}
+
+.btn-call-speaker:hover, .btn-call-speaker:active {
+  background: #392f20;
+  border-color: #f0883e;
+}
+
+.call-action-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.call-action-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.call-action-title {
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.call-action-sub {
+  color: #8b949e;
+  font-size: 12px;
+}
+
+.btn-call-cancel {
+  width: 100%;
+  padding: 12px;
+  margin-top: 4px;
+  background: transparent;
+  border: none;
+  color: #8e8e93;
+  font-size: 15px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-call-cancel:hover, .btn-call-cancel:active {
+  color: #ffffff;
+}
+
+.btn-call-reject {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px;
+  background: rgba(235, 59, 90, 0.14);
+  border: 1px solid #eb3b5a;
+  border-radius: 12px;
+  color: #ff453a;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-top: 2px;
+}
+
+.btn-call-reject:hover, .btn-call-reject:active {
+  background: rgba(235, 59, 90, 0.28);
+}
+
+/* 着信カードのアニメーション */
+.incoming-card {
+  border-color: #2ecc71;
+  animation: incoming-ring-pulse 1.8s infinite;
+}
+
+@keyframes incoming-ring-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.6), 0 12px 36px rgba(0, 0, 0, 0.75);
+  }
+  70% {
+    box-shadow: 0 0 0 16px rgba(46, 204, 113, 0), 0 12px 36px rgba(0, 0, 0, 0.75);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(46, 204, 113, 0), 0 12px 36px rgba(0, 0, 0, 0.75);
+  }
+}
+
+.incoming-icon {
+  animation: ring-shake 1.2s infinite ease-in-out;
+}
+
+@keyframes ring-shake {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-14deg); }
+  40% { transform: rotate(14deg); }
+  60% { transform: rotate(-10deg); }
+  80% { transform: rotate(10deg); }
 }

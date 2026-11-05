@@ -192,6 +192,83 @@
     <button class="action-btn" onclick="cancelSelectMode()">キャンセル</button>
   </div>
 
+  <!-- 通話中ステータスバー -->
+  <div id="call-bar" class="call-bar hidden">
+    <div class="call-bar-info">
+      <span class="call-pulse-dot"></span>
+      <span id="call-status-text">📞 通話中</span>
+      <span id="call-mode-badge" class="call-mode-badge">👂 通常</span>
+    </div>
+    <div class="call-bar-actions">
+      <button id="speakerphone-button" class="btn-call-mode" onclick="toggleCallMode()">
+        📢 スピーカーへ切替
+      </button>
+      <button class="btn-call-end" onclick="endCall()">
+        📵 終了
+      </button>
+    </div>
+  </div>
+
+  <!-- 発信確認モーダル -->
+  <div id="call-start-modal" class="call-modal-overlay hidden" onclick="closeCallModal()">
+    <div class="call-modal-card" onclick="event.stopPropagation()">
+      <div class="call-modal-header">
+        <span class="call-modal-icon">📞</span>
+        <h3>通話を発信</h3>
+      </div>
+      <p class="call-modal-desc">通話モードを選択してください</p>
+      <div class="call-modal-buttons">
+        <button class="btn-call-action btn-call-normal" onclick="executeCall('normal')">
+          <span class="call-action-icon">👂</span>
+          <div class="call-action-text">
+            <span class="call-action-title">通常通話で発信 (受話口)</span>
+            <span class="call-action-sub">耳元で聴く（適正音量・受話口優先）</span>
+          </div>
+        </button>
+        <button class="btn-call-action btn-call-speaker" onclick="executeCall('speaker')">
+          <span class="call-action-icon">📢</span>
+          <div class="call-action-text">
+            <span class="call-action-title">スピーカーホンで発信</span>
+            <span class="call-action-sub">拡声モード（大音量・周囲と共有）</span>
+          </div>
+        </button>
+        <button class="btn-call-cancel" onclick="closeCallModal()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 着信応答モーダル -->
+  <div id="incoming-call-modal" class="call-modal-overlay hidden">
+    <div class="call-modal-card incoming-card" onclick="event.stopPropagation()">
+      <div class="incoming-ring-animation"></div>
+      <div class="call-modal-header">
+        <span class="call-modal-icon incoming-icon">📲</span>
+        <h3>着信中...</h3>
+      </div>
+      <p class="call-modal-desc">通話の着信があります。応答方法を選択してください</p>
+      <div class="call-modal-buttons">
+        <button class="btn-call-action btn-call-normal" onclick="answerCall('normal')">
+          <span class="call-action-icon">👂</span>
+          <div class="call-action-text">
+            <span class="call-action-title">通常通話で応答</span>
+            <span class="call-action-sub">受話口・耳元音量</span>
+          </div>
+        </button>
+        <button class="btn-call-action btn-call-speaker" onclick="answerCall('speaker')">
+          <span class="call-action-icon">📢</span>
+          <div class="call-action-text">
+            <span class="call-action-title">スピーカーホンで応答</span>
+            <span class="call-action-sub">拡声スピーカー</span>
+          </div>
+        </button>
+        <button class="btn-call-reject" onclick="rejectCall()">
+          <span class="call-action-icon">📵</span>
+          <span class="call-action-title">拒否</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- トースト通知 -->
   <div id="dummy-toast" class="hidden"></div>
 

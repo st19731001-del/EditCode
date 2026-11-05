@@ -3,6 +3,7 @@
 let peer = null;
 let activeConn = null;
 let activeCall = null;
+let pendingIncomingCall = null;
 let localAudioStream = null;
 let isSpeakerphoneEnabled = false;
 let reconnectTimer = null;
@@ -171,26 +172,12 @@ function initPeer() {
     setupConnectionEvents();
   });
 
-  peer.on('call', async (call) => {
+  peer.on('call', (call) => {
     if (activeCall) {
       call.close();
       return;
     }
-    if (confirm('📞 通話の着信があります。応答しますか？')) {
-      try {
-        const stream = await getCallAudioStream();
-        localAudioStream = stream;
-        call.answer(stream);
-        handleCallStream(call);
-      } catch (e) {
-        call.close();
-        stopLocalAudioStream();
-        console.error('着信への応答に失敗しました:', e);
-        alert(getCallErrorMessage(e));
-      }
-    } else {
-      call.close();
-    }
+    showIncomingCallModal(call);
   });
 
   peer.on('disconnected', () => {
@@ -893,35 +880,359 @@ function cancelReply() {
   if (preview) preview.classList.add('hidden');
 }
 
+// ================= 通話音声管理 (Web Audio API & setSinkId ハイブリッド制御) =================
+class CallAudioManager {
+  constructor() {
+    this.audioCtx = null;
+    this.sourceNode = null;
+    this.gainNode = null;
+    this.filterNode = null;
+    this.audioElement = null;
+    // 前回選択した通話モードを復元、未設定時は 'normal'（受話口・通常通話）
+    this.currentMode = localStorage.getItem('preferred_call_mode') || 'normal';
+  }
+
+  getMode() {
+    return this.currentMode;
+  }
+
+  setMode(mode) {
+    this.currentMode = mode === 'speaker' ? 'speaker' : 'normal';
+    try {
+      localStorage.setItem('preferred_call_mode', this.currentMode);
+    } catch (e) {}
+    this.applyAudioProfile();
+  }
+
+  toggleMode() {
+    const nextMode = this.currentMode === 'normal' ? 'speaker' : 'normal';
+    this.setMode(nextMode);
+    return this.currentMode;
+  }
+
+  ensureAudioContext() {
+    try {
+      const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtxClass && (!this.audioCtx || this.audioCtx.state === 'closed')) {
+        this.audioCtx = new AudioCtxClass();
+      }
+      if (this.audioCtx && this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume().catch(() => {});
+      }
+    } catch (e) {
+      console.warn('AudioContext作成・再開失敗:', e);
+    }
+  }
+
+  async attachRemoteStream(audioElement, stream) {
+    this.audioElement = audioElement;
+    this.audioElement.srcObject = stream;
+    this.audioElement.autoplay = true;
+    this.audioElement.playsInline = true;
+
+    // Web Audio API による音響プロファイル構築
+    try {
+      this.ensureAudioContext();
+      if (this.audioCtx) {
+        if (this.sourceNode) {
+          try { this.sourceNode.disconnect(); } catch (e) {}
+        }
+        if (this.filterNode) {
+          try { this.filterNode.disconnect(); } catch (e) {}
+        }
+        if (this.gainNode) {
+          try { this.gainNode.disconnect(); } catch (e) {}
+        }
+
+        this.sourceNode = this.audioCtx.createMediaStreamSource(stream);
+        this.filterNode = this.audioCtx.createBiquadFilter();
+        this.gainNode = this.audioCtx.createGain();
+
+        // 接続: source -> filter -> gain -> destination
+        this.sourceNode.connect(this.filterNode);
+        this.filterNode.connect(this.gainNode);
+        this.gainNode.connect(this.audioCtx.destination);
+
+        // Web Audio API で鳴らすため audioElement 自体の直接再生はミュート（エコー・多重再生防止）
+        this.audioElement.muted = true;
+      }
+    } catch (e) {
+      console.warn('Web Audio API の初期化に失敗しました。audio要素直接出力にフォールバックします:', e);
+      if (this.audioElement) {
+        this.audioElement.muted = false;
+      }
+    }
+
+    await this.applyAudioProfile();
+
+    try {
+      await this.audioElement.play();
+    } catch (e) {
+      console.warn('audio.play() エラーまたは保留:', e);
+    }
+  }
+
+  async applyAudioProfile() {
+    const isNormal = this.currentMode === 'normal';
+
+    // 1. Web Audio API 音響制御 (GainNode / BiquadFilterNode)
+    if (this.gainNode && this.audioCtx) {
+      const now = this.audioCtx.currentTime;
+      if (isNormal) {
+        // 通常通話: 耳元用適正音量 (0.38) + 人の声強調バンドパスフィルター (約1800Hz)
+        this.gainNode.gain.cancelScheduledValues(now);
+        this.gainNode.gain.setTargetAtTime(0.38, now, 0.05);
+        if (this.filterNode) {
+          this.filterNode.type = 'bandpass';
+          this.filterNode.frequency.setTargetAtTime(1800, now, 0.05);
+          this.filterNode.Q.setTargetAtTime(0.8, now, 0.05);
+        }
+      } else {
+        // スピーカーホン: 拡声フルゲイン (1.0) + 全周波数フラットパス
+        this.gainNode.gain.cancelScheduledValues(now);
+        this.gainNode.gain.setTargetAtTime(1.0, now, 0.05);
+        if (this.filterNode) {
+          this.filterNode.type = 'allpass';
+        }
+      }
+    }
+
+    // 2. フォールバック制御 (audio.volume)
+    if (this.audioElement) {
+      if (this.audioCtx && this.sourceNode) {
+        this.audioElement.muted = true;
+      } else {
+        this.audioElement.muted = false;
+        this.audioElement.volume = isNormal ? 0.4 : 1.0;
+      }
+
+      // 3. setSinkId の試行（受話口・スピーカー候補の探索）
+      await this.trySetSinkId(isNormal);
+    }
+  }
+
+  async trySetSinkId(isNormal) {
+    if (!this.audioElement || typeof this.audioElement.setSinkId !== 'function') return;
+
+    try {
+      const devices = typeof navigator.mediaDevices?.enumerateDevices === 'function'
+        ? await navigator.mediaDevices.enumerateDevices()
+        : [];
+      const outputs = devices.filter(d => d.kind === 'audiooutput');
+
+      if (isNormal) {
+        const receiver = outputs.find(d =>
+          /earpiece|receiver|telephone|受話|通信/i.test(d.label)
+        );
+        if (receiver) {
+          await this.audioElement.setSinkId(receiver.deviceId);
+        } else {
+          await this.audioElement.setSinkId('default');
+        }
+      } else {
+        const speaker = outputs.find(d =>
+          /speaker|スピーカー/i.test(d.label)
+        );
+        if (speaker) {
+          await this.audioElement.setSinkId(speaker.deviceId);
+        } else {
+          await this.audioElement.setSinkId('default');
+        }
+      }
+    } catch (e) {
+      console.warn('setSinkId 切替試行時の通知 (継続):', e);
+    }
+  }
+
+  cleanup() {
+    if (this.sourceNode) {
+      try { this.sourceNode.disconnect(); } catch (e) {}
+      this.sourceNode = null;
+    }
+    if (this.filterNode) {
+      try { this.filterNode.disconnect(); } catch (e) {}
+      this.filterNode = null;
+    }
+    if (this.gainNode) {
+      try { this.gainNode.disconnect(); } catch (e) {}
+      this.gainNode = null;
+    }
+    if (this.audioCtx && this.audioCtx.state !== 'closed') {
+      try { this.audioCtx.close(); } catch (e) {}
+      this.audioCtx = null;
+    }
+    if (this.audioElement) {
+      this.audioElement.srcObject = null;
+      this.audioElement = null;
+    }
+  }
+}
+
+const callAudioManager = new CallAudioManager();
+
 // 通話・画面制御
-async function startCall() {
+
+// 発信フロー
+function startCall() {
   if (activeCall) return;
 
   if (activeConn && activeConn.open && partnerIsOnline && peer && !peer.destroyed) {
-    let stream = null;
-    try {
-      stream = await getCallAudioStream();
-      localAudioStream = stream;
-      const call = peer.call(targetRole, stream);
-      if (!call) throw new Error('PeerJSが通話を開始できませんでした');
-      handleCallStream(call);
-    } catch (err) {
-      if (stream) stream.getTracks().forEach(track => track.stop());
-      localAudioStream = null;
-      console.error('発信に失敗しました:', err);
-      alert(getCallErrorMessage(err));
-    }
+    showCallModal();
   } else {
     if (confirm('相手がオフラインです。「システムアップデート」の呼び出し通知を送信しますか？')) {
-      const sent = await triggerPushNotification(
+      triggerPushNotification(
         'GitHub Action Notification',
         'EditCode: commit and build completed successfully.',
         true
-      );
-      if (sent) {
-        alert('相手がオフラインのため呼び出し通知を送信しました');
-      }
+      ).then(sent => {
+        if (sent) alert('相手がオフラインのため呼び出し通知を送信しました');
+      });
     }
+  }
+}
+
+function showCallModal() {
+  const modal = document.getElementById('call-start-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeCallModal() {
+  const modal = document.getElementById('call-start-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function executeCall(mode) {
+  closeCallModal();
+  if (activeCall) return;
+
+  callAudioManager.setMode(mode);
+  callAudioManager.ensureAudioContext();
+
+  let stream = null;
+  try {
+    stream = await getCallAudioStream();
+    localAudioStream = stream;
+    const call = peer.call(targetRole, stream);
+    if (!call) throw new Error('PeerJSが通話を開始できませんでした');
+    handleCallStream(call);
+  } catch (err) {
+    if (stream) stream.getTracks().forEach(track => track.stop());
+    localAudioStream = null;
+    console.error('発信に失敗しました:', err);
+    alert(getCallErrorMessage(err));
+  }
+}
+
+// 着信フロー
+function showIncomingCallModal(call) {
+  pendingIncomingCall = call;
+  const modal = document.getElementById('incoming-call-modal');
+  if (modal) {
+    modal.classList.remove('hidden');
+  }
+
+  if (typeof navigator.vibrate === 'function') {
+    try {
+      navigator.vibrate([300, 150, 300, 150, 500]);
+    } catch (e) {}
+  }
+
+  call.on('close', () => {
+    if (pendingIncomingCall === call) {
+      closeIncomingCallModal();
+      pendingIncomingCall = null;
+    }
+  });
+
+  call.on('error', () => {
+    if (pendingIncomingCall === call) {
+      closeIncomingCallModal();
+      pendingIncomingCall = null;
+    }
+  });
+}
+
+function closeIncomingCallModal() {
+  const modal = document.getElementById('incoming-call-modal');
+  if (modal) modal.classList.add('hidden');
+  if (typeof navigator.vibrate === 'function') {
+    try { navigator.vibrate(0); } catch (e) {}
+  }
+}
+
+async function answerCall(mode) {
+  if (!pendingIncomingCall) return;
+  const call = pendingIncomingCall;
+  pendingIncomingCall = null;
+  closeIncomingCallModal();
+
+  callAudioManager.setMode(mode);
+  callAudioManager.ensureAudioContext();
+
+  try {
+    const stream = await getCallAudioStream();
+    localAudioStream = stream;
+    call.answer(stream);
+    handleCallStream(call);
+  } catch (e) {
+    call.close();
+    stopLocalAudioStream();
+    console.error('着信への応答に失敗しました:', e);
+    alert(getCallErrorMessage(e));
+  }
+}
+
+function rejectCall() {
+  if (pendingIncomingCall) {
+    try {
+      pendingIncomingCall.close();
+    } catch (e) {}
+    pendingIncomingCall = null;
+  }
+  closeIncomingCallModal();
+}
+
+// 通話中制御
+function toggleCallMode() {
+  callAudioManager.toggleMode();
+  updateCallBarUI();
+}
+
+function updateCallBarUI() {
+  const mode = callAudioManager.getMode();
+  const isSpeaker = mode === 'speaker';
+
+  const badge = document.getElementById('call-mode-badge');
+  if (badge) {
+    badge.innerText = isSpeaker ? '📢 スピーカー' : '👂 通常';
+  }
+
+  const btn = document.getElementById('speakerphone-button');
+  if (btn) {
+    btn.innerText = isSpeaker ? '👂 通常通話へ切替' : '📢 スピーカーへ切替';
+    btn.setAttribute('aria-pressed', String(isSpeaker));
+  }
+
+  isSpeakerphoneEnabled = isSpeaker;
+}
+
+function showCallBar(show) {
+  let callBar = document.getElementById('call-bar');
+  if (!callBar) {
+    callBar = document.createElement('div');
+    callBar.id = 'call-bar';
+    callBar.className = 'call-bar';
+    callBar.innerHTML = '<div class="call-bar-info"><span class="call-pulse-dot"></span><span id="call-status-text">📞 通話中</span><span id="call-mode-badge" class="call-mode-badge">👂 通常</span></div><div class="call-bar-actions"><button id="speakerphone-button" class="btn-call-mode" onclick="toggleCallMode()">📢 スピーカーへ切替</button><button class="btn-call-end" onclick="endCall()">📵 終了</button></div>';
+    document.body.appendChild(callBar);
+  }
+
+  if (show) {
+    callBar.classList.remove('hidden');
+    callBar.style.display = 'flex';
+    updateCallBarUI();
+  } else {
+    callBar.classList.add('hidden');
+    callBar.style.display = 'none';
   }
 }
 
@@ -930,7 +1241,13 @@ async function getCallAudioStream() {
       typeof navigator.mediaDevices.getUserMedia !== 'function') {
     throw new Error('マイクを利用できる安全な接続（HTTPS）が必要です');
   }
-  return navigator.mediaDevices.getUserMedia({ audio: true });
+  return navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true
+    }
+  });
 }
 
 function getCallErrorMessage(error) {
@@ -949,7 +1266,9 @@ function stopLocalAudioStream() {
 }
 
 function handleCallStream(call) {
-  if (activeCall && activeCall !== call) activeCall.close();
+  if (activeCall && activeCall !== call) {
+    try { activeCall.close(); } catch (e) {}
+  }
   activeCall = call;
   requestCallWakeLock();
   showCallBar(true);
@@ -963,11 +1282,7 @@ function handleCallStream(call) {
       audio.playsInline = true;
       document.body.appendChild(audio);
     }
-    audio.srcObject = remoteStream;
-    audio.muted = false;
-    audio.volume = 1;
-    await routeCallAudioToReceiver(audio);
-    audio.play().catch(() => {});
+    await callAudioManager.attachRemoteStream(audio, remoteStream);
   });
 
   call.on('close', () => {
@@ -985,7 +1300,7 @@ function handleCallStream(call) {
 
 function endCall() {
   if (activeCall) {
-    activeCall.close();
+    try { activeCall.close(); } catch (e) {}
     activeCall = null;
   }
   endCallUI();
@@ -993,13 +1308,17 @@ function endCall() {
 
 function endCallUI() {
   activeCall = null;
+  pendingIncomingCall = null;
   stopLocalAudioStream();
+  callAudioManager.cleanup();
+  closeCallModal();
+  closeIncomingCallModal();
+
   const audio = document.getElementById('remote-audio');
   if (audio) {
     audio.srcObject = null;
   }
   releaseCallWakeLock();
-  isSpeakerphoneEnabled = false;
   showCallBar(false);
 }
 
@@ -1022,66 +1341,17 @@ function releaseCallWakeLock() {
   wakeLock = null;
 }
 
+// 互換性維持用のフォールバック関数
 async function routeCallAudioToReceiver(audio) {
-  if (typeof audio.setSinkId !== 'function') return;
-
-  try {
-    await audio.setSinkId('default');
-    const devices = typeof navigator.mediaDevices?.enumerateDevices === 'function'
-      ? await navigator.mediaDevices.enumerateDevices()
-      : [];
-    const receiver = devices.find(device =>
-      device.kind === 'audiooutput' && /earpiece|receiver|telephone|受話|通信/i.test(device.label)
-    );
-    if (receiver) {
-      await audio.setSinkId(receiver.deviceId);
-    }
-  } catch (error) {
-    console.warn('受話口への音声出力設定を利用できません:', error);
-  }
+  return callAudioManager.trySetSinkId(true);
 }
 
 async function toggleSpeakerphone() {
-  const audio = document.getElementById('remote-audio');
-  if (!audio) return;
-
-  if (typeof audio.setSinkId !== 'function' ||
-      typeof navigator.mediaDevices?.selectAudioOutput !== 'function') {
-    alert('このブラウザでは通話中のスピーカー切り替えに対応していません');
-    return;
-  }
-
-  try {
-    const outputDevice = await navigator.mediaDevices.selectAudioOutput();
-    await audio.setSinkId(outputDevice.deviceId);
-    isSpeakerphoneEnabled = /speaker|スピーカー/i.test(outputDevice.label || '');
-    updateSpeakerphoneButton();
-  } catch (error) {
-    if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') {
-      console.error('スピーカー出力の切り替えに失敗しました:', error);
-      alert('スピーカー出力に切り替えられませんでした');
-    }
-  }
+  toggleCallMode();
 }
 
 function updateSpeakerphoneButton() {
-  const button = document.getElementById('speakerphone-button');
-  if (!button) return;
-  button.innerText = isSpeakerphoneEnabled ? '📢 スピーカーホン中' : '🔊 音声出力を選択';
-  button.setAttribute('aria-pressed', String(isSpeakerphoneEnabled));
-}
-
-function showCallBar(show) {
-  let callBar = document.getElementById('call-bar');
-  if (!callBar) {
-    callBar = document.createElement('div');
-    callBar.id = 'call-bar';
-    callBar.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:40px;background:#28a745;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 16px;z-index:3000;font-size:14px;font-weight:bold;';
-    callBar.innerHTML = '<span>📞 通話中...</span><div style="display:flex;gap:6px;align-items:center;"><button id="speakerphone-button" onclick="toggleSpeakerphone()" style="background:#198754;color:#fff;border:none;padding:4px 10px;border-radius:4px;font-weight:bold;cursor:pointer;">🔊 音声出力を選択</button><button onclick="endCall()" style="background:#dc3545;color:#fff;border:none;padding:4px 12px;border-radius:4px;font-weight:bold;cursor:pointer;">📵 終了</button></div>';
-    document.body.appendChild(callBar);
-  }
-  callBar.style.display = show ? 'flex' : 'none';
-  if (show) updateSpeakerphoneButton();
+  updateCallBarUI();
 }
 
 function appendSystemMsg(text) {
