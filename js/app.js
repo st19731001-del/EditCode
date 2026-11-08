@@ -1027,13 +1027,13 @@ class CallAudioManager {
     if (this.gainNode && this.audioCtx) {
       const now = this.audioCtx.currentTime;
       if (isNormal) {
-        // 通常通話: 耳元用適正音量 (0.38) + 人の声強調バンドパスフィルター (約1800Hz)
+        // 通常通話: 原音100%フルゲイン (1.0) + 吹かれ音・低周波ノイズのみカット (highpass 120Hz, Q 0.7)
         this.gainNode.gain.cancelScheduledValues(now);
-        this.gainNode.gain.setTargetAtTime(0.38, now, 0.05);
+        this.gainNode.gain.setTargetAtTime(1.0, now, 0.05);
         if (this.filterNode) {
-          this.filterNode.type = 'bandpass';
-          this.filterNode.frequency.setTargetAtTime(1800, now, 0.05);
-          this.filterNode.Q.setTargetAtTime(0.8, now, 0.05);
+          this.filterNode.type = 'highpass';
+          this.filterNode.frequency.setTargetAtTime(120, now, 0.05);
+          this.filterNode.Q.setTargetAtTime(0.7, now, 0.05);
         }
       } else {
         // スピーカーホン: 拡声フルゲイン (1.0) + 全周波数フラットパス
@@ -1051,7 +1051,7 @@ class CallAudioManager {
         this.audioElement.muted = true;
       } else {
         this.audioElement.muted = false;
-        this.audioElement.volume = isNormal ? 0.4 : 1.0;
+        this.audioElement.volume = 1.0;
       }
 
       // 3. setSinkId の試行（受話口・スピーカー候補の探索）
@@ -1117,6 +1117,217 @@ class CallAudioManager {
 }
 
 const callAudioManager = new CallAudioManager();
+
+// ================= 通話中誤タッチ防止（耳あて消灯・ブラックアウト）管理 =================
+class TouchGuardManager {
+  constructor() {
+    this.isActive = false;
+    this.isManual = false;
+    this.timerInterval = null;
+    this.callStartTime = null;
+    this.lastTapTime = 0;
+    this.longPressTimer = null;
+    this.touchStartX = 0;
+    this.touchStartY = 0;
+    this.isPressing = false;
+
+    this.boundHandleOrientation = this.handleOrientation.bind(this);
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => this.initEvents());
+    } else {
+      this.initEvents();
+    }
+  }
+
+  initEvents() {
+    const guardElem = document.getElementById('call-touch-guard');
+    if (!guardElem) return;
+
+    // タッチ誤爆防止 & ダブルタップ / 長押し判定
+    guardElem.addEventListener('touchstart', (e) => {
+      if (!this.isActive) return;
+      if (e.cancelable) e.preventDefault();
+
+      const touch = e.touches[0];
+      this.touchStartX = touch.clientX;
+      this.touchStartY = touch.clientY;
+      this.isPressing = true;
+
+      // 長押し判定 (600ms)
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = setTimeout(() => {
+        if (this.isPressing) {
+          if (typeof navigator.vibrate === 'function') {
+            try { navigator.vibrate(60); } catch (err) {}
+          }
+          this.setTouchGuard(false, false);
+        }
+      }, 600);
+    }, { passive: false });
+
+    guardElem.addEventListener('touchmove', (e) => {
+      if (e.cancelable) e.preventDefault();
+      if (!this.isPressing) return;
+      const touch = e.touches[0];
+      const dx = Math.abs(touch.clientX - this.touchStartX);
+      const dy = Math.abs(touch.clientY - this.touchStartY);
+      if (dx > 25 || dy > 25) {
+        this.isPressing = false;
+        clearTimeout(this.longPressTimer);
+      }
+    }, { passive: false });
+
+    guardElem.addEventListener('touchend', (e) => {
+      if (e.cancelable) e.preventDefault();
+      clearTimeout(this.longPressTimer);
+      if (!this.isPressing) return;
+      this.isPressing = false;
+
+      // ダブルタップ判定 (300ms以内)
+      const now = Date.now();
+      if (now - this.lastTapTime < 300) {
+        if (typeof navigator.vibrate === 'function') {
+          try { navigator.vibrate(60); } catch (err) {}
+        }
+        this.setTouchGuard(false, false);
+        this.lastTapTime = 0;
+      } else {
+        this.lastTapTime = now;
+      }
+    }, { passive: false });
+
+    // PC/クリック環境用
+    guardElem.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.setTouchGuard(false, false);
+    });
+
+    // 傾きセンサーのイベントリスナー登録
+    if (window.DeviceOrientationEvent) {
+      window.addEventListener('deviceorientation', this.boundHandleOrientation);
+    }
+  }
+
+  handleOrientation(event) {
+    if (!activeCall) return;
+    // 手動で画面保護をONにした場合は自動検知による勝手な解除は行わず、ユーザー操作まで維持
+    if (this.isManual && this.isActive) return;
+
+    // スピーカーホンモード時は耳にあてないため自動ガードをオフ維持
+    const mode = callAudioManager ? callAudioManager.getMode() : 'normal';
+    if (mode === 'speaker') {
+      if (this.isActive && !this.isManual) {
+        this.setTouchGuard(false, false);
+      }
+      return;
+    }
+
+    const beta = event.beta;
+    const gamma = event.gamma;
+    if (beta === null || gamma === null) return;
+
+    // スマホを耳に当てて縦持ち（beta が 50°〜130° かつ Math.abs(gamma) < 45）
+    const isEarPosition = (beta >= 50 && beta <= 130) && (Math.abs(gamma) < 45);
+
+    // 端末を耳から離して水平（顔の前に戻す、beta < 40° または beta > 140°）
+    const isAwayPosition = (beta < 40 || beta > 140);
+
+    if (isEarPosition && !this.isActive) {
+      this.setTouchGuard(true, false);
+    } else if (isAwayPosition && this.isActive && !this.isManual) {
+      this.setTouchGuard(false, false);
+    }
+  }
+
+  setTouchGuard(active, isManual = false) {
+    this.isActive = !!active;
+    this.isManual = this.isActive ? !!isManual : false;
+
+    const guardElem = document.getElementById('call-touch-guard');
+    if (guardElem) {
+      if (this.isActive) {
+        guardElem.classList.remove('hidden');
+        this.updateGuardUI();
+      } else {
+        guardElem.classList.add('hidden');
+      }
+    }
+
+    const btn = document.getElementById('touch-guard-button');
+    if (btn) {
+      btn.innerText = this.isActive ? '🛡️ 保護中' : '🛡️ 保護';
+      btn.style.background = this.isActive ? '#1f385c' : '';
+      btn.style.borderColor = this.isActive ? '#58a6ff' : '';
+    }
+  }
+
+  toggleTouchGuard(force) {
+    const nextState = typeof force === 'boolean' ? force : !this.isActive;
+    this.setTouchGuard(nextState, true);
+  }
+
+  startCallTimer() {
+    this.callStartTime = Date.now();
+    this.stopCallTimer();
+    this.timerInterval = setInterval(() => {
+      this.updateCallTimerUI();
+    }, 1000);
+    this.updateCallTimerUI();
+  }
+
+  stopCallTimer() {
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+      this.timerInterval = null;
+    }
+    this.callStartTime = null;
+    const timeElem = document.getElementById('touch-guard-time');
+    if (timeElem) timeElem.innerText = '00:00';
+  }
+
+  updateCallTimerUI() {
+    if (!this.callStartTime) return;
+    const elapsedSec = Math.floor((Date.now() - this.callStartTime) / 1000);
+    const m = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+    const s = String(elapsedSec % 60).padStart(2, '0');
+    const formatted = `${m}:${s}`;
+
+    const timeElem = document.getElementById('touch-guard-time');
+    if (timeElem) timeElem.innerText = formatted;
+
+    const statusElem = document.getElementById('call-status-text');
+    if (statusElem && activeCall) {
+      statusElem.innerText = `📞 通話中 (${formatted})`;
+    }
+  }
+
+  updateGuardUI() {
+    const mode = callAudioManager ? callAudioManager.getMode() : 'normal';
+    const modeElem = document.getElementById('touch-guard-mode');
+    if (modeElem) {
+      modeElem.innerText = mode === 'speaker' ? '📢 スピーカーホン中' : '👂 通常通話中';
+    }
+    this.updateCallTimerUI();
+  }
+
+  cleanup() {
+    this.setTouchGuard(false, false);
+    this.stopCallTimer();
+    const statusElem = document.getElementById('call-status-text');
+    if (statusElem) statusElem.innerText = '📞 通話中';
+  }
+}
+
+const touchGuardManager = new TouchGuardManager();
+
+function toggleTouchGuard(force) {
+  touchGuardManager.toggleTouchGuard(force);
+}
+
+function setTouchGuard(active, isManual) {
+  touchGuardManager.setTouchGuard(active, isManual);
+}
 
 // 通話・画面制御
 
@@ -1261,6 +1472,14 @@ function updateCallBarUI() {
     btn.setAttribute('aria-pressed', String(isSpeaker));
   }
 
+  const guardBtn = document.getElementById('touch-guard-button');
+  if (guardBtn) {
+    guardBtn.innerText = touchGuardManager.isActive ? '🛡️ 保護中' : '🛡️ 保護';
+    guardBtn.style.background = touchGuardManager.isActive ? '#1f385c' : '';
+    guardBtn.style.borderColor = touchGuardManager.isActive ? '#58a6ff' : '';
+  }
+
+  touchGuardManager.updateGuardUI();
   isSpeakerphoneEnabled = isSpeaker;
 }
 
@@ -1270,7 +1489,7 @@ function showCallBar(show) {
     callBar = document.createElement('div');
     callBar.id = 'call-bar';
     callBar.className = 'call-bar';
-    callBar.innerHTML = '<div class="call-bar-info"><span class="call-pulse-dot"></span><span id="call-status-text">📞 通話中</span><span id="call-mode-badge" class="call-mode-badge">👂 通常</span></div><div class="call-bar-actions"><button id="speakerphone-button" class="btn-call-mode" onclick="toggleCallMode()">📢 スピーカーへ切替</button><button class="btn-call-end" onclick="endCall()">📵 終了</button></div>';
+    callBar.innerHTML = '<div class="call-bar-info"><span class="call-pulse-dot"></span><span id="call-status-text">📞 通話中</span><span id="call-mode-badge" class="call-mode-badge">👂 通常</span></div><div class="call-bar-actions"><button id="touch-guard-button" class="btn-call-guard" onclick="toggleTouchGuard()" title="画面保護（誤タッチ防止）">🛡️ 保護</button><button id="speakerphone-button" class="btn-call-mode" onclick="toggleCallMode()">📢 スピーカーへ切替</button><button class="btn-call-end" onclick="endCall()">📵 終了</button></div>';
     document.body.appendChild(callBar);
   }
 
@@ -1320,6 +1539,7 @@ function handleCallStream(call) {
   activeCall = call;
   requestCallWakeLock();
   showCallBar(true);
+  touchGuardManager.startCallTimer();
 
   call.on('stream', async (remoteStream) => {
     let audio = document.getElementById('remote-audio');
@@ -1359,6 +1579,7 @@ function endCallUI() {
   pendingIncomingCall = null;
   stopLocalAudioStream();
   callAudioManager.cleanup();
+  touchGuardManager.cleanup();
   closeCallModal();
   closeIncomingCallModal();
 

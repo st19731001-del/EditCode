@@ -200,12 +200,30 @@
       <span id="call-mode-badge" class="call-mode-badge">👂 通常</span>
     </div>
     <div class="call-bar-actions">
+      <button id="touch-guard-button" class="btn-call-guard" onclick="toggleTouchGuard()" title="画面保護（誤タッチ防止）">
+        🛡️ 保護
+      </button>
       <button id="speakerphone-button" class="btn-call-mode" onclick="toggleCallMode()">
         📢 スピーカーへ切替
       </button>
       <button class="btn-call-end" onclick="endCall()">
         📵 終了
       </button>
+    </div>
+  </div>
+
+  <!-- 通話中画面保護・誤タッチ防止オーバーレイ（耳あて消灯） -->
+  <div id="call-touch-guard" class="call-touch-guard hidden">
+    <div class="touch-guard-content">
+      <div class="touch-guard-status">
+        <span class="touch-guard-pulse"></span>
+        <span id="touch-guard-mode" class="touch-guard-mode-text">👂 通常通話中</span>
+        <span id="touch-guard-time" class="touch-guard-time-text">00:00</span>
+      </div>
+      <div class="touch-guard-unlock-area" id="touch-guard-unlock-area">
+        <div class="touch-guard-unlock-icon">🔒</div>
+        <div class="touch-guard-unlock-hint">ダブルタップ または 長押しでロック解除</div>
+      </div>
     </div>
   </div>
 
