@@ -120,11 +120,32 @@ async function getTargetPushSubscription() {
   return null;
 }
 
+// 現在の未読メッセージ数を取得するヘルパー関数
+function getLocalUnreadCount() {
+  try {
+    if (typeof getStoredMessages === 'function') {
+      const msgs = getStoredMessages();
+      return msgs.filter(m => m.sender === 'partner' && !m.isRead).length;
+    }
+    const raw = localStorage.getItem('chat_history');
+    if (raw) {
+      const msgs = JSON.parse(raw);
+      return msgs.filter(m => m.sender === 'partner' && !m.isRead).length;
+    }
+  } catch (e) {}
+  return 0;
+}
+
 // Vercel経由での通知トリガー送信
 // 修正: silent=true の場合、成功/失敗のalert()を出さない
 // (メッセージ送信のたびに自動でPush通知をトリガーするようになったため、
 //  ユーザー操作を伴わない自動実行時にまでアラートが出るのを防ぐ)
-async function triggerPushNotification(title = '[System] Maintenance', body = 'システムアップデートの準備が完了しました。確認してください。', silent = false) {
+async function triggerPushNotification(
+  title = '[System] Maintenance',
+  body = 'システムアップデートの準備が完了しました。確認してください。',
+  silent = false,
+  badgeCount = null
+) {
   const targetSubscription = await getTargetPushSubscription();
   
   if (!targetSubscription) {
@@ -134,6 +155,10 @@ async function triggerPushNotification(title = '[System] Maintenance', body = '�
     return false;
   }
 
+  const effectiveBadgeCount = (typeof badgeCount === 'number' && badgeCount > 0)
+    ? Math.floor(badgeCount)
+    : (getLocalUnreadCount() + 1);
+
   try {
     const response = await fetch(VERCEL_API_URL, {
       method: 'POST',
@@ -141,7 +166,8 @@ async function triggerPushNotification(title = '[System] Maintenance', body = '�
       body: JSON.stringify({
         subscription: targetSubscription,
         title: title,
-        body: body
+        body: body,
+        badgeCount: effectiveBadgeCount
       })
     });
 

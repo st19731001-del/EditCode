@@ -411,6 +411,7 @@ function clearPartnerUnreadState() {
 
   if (updated) {
     saveStoredMessages(messages);
+    updateUnreadBadgeCount();
   }
 }
 
@@ -856,16 +857,63 @@ function deleteLocalMessage(msgId) {
 }
 
 function updateBadge(count) {
-  if (typeof navigator.setAppBadge !== 'function') return;
+  const safeCount = (typeof count === 'number' && Number.isFinite(count) && count > 0) ? Math.floor(count) : 0;
 
-  const badgeAction = count > 0
-    ? navigator.setAppBadge(count)
-    : (typeof navigator.clearAppBadge === 'function' ? navigator.clearAppBadge() : null);
+  if (safeCount > 0) {
+    // 1. App Badging API によるアプリアイコンバッジ設定
+    if (typeof navigator.setAppBadge === 'function') {
+      try {
+        navigator.setAppBadge(safeCount).catch((error) => {
+          console.warn('アプリアイコンのバッジ設定に失敗しました:', error);
+        });
+      } catch (error) {
+        console.warn('setAppBadge 呼び出しエラー:', error);
+      }
+    }
 
-  if (badgeAction && typeof badgeAction.catch === 'function') {
-    badgeAction.catch((error) => {
-      console.warn('アプリアイコンのバッジ更新に失敗しました:', error);
-    });
+    // 2. Service Worker へのバッジ同期通知
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'SYNC_BADGE',
+          count: safeCount
+        });
+      }
+    } catch (error) {
+      console.warn('Service WorkerへのSYNC_BADGE通知に失敗しました:', error);
+    }
+
+    // 3. ドキュメントタイトルの更新（非対応環境・通常ブラウザタブ用フォールバック）
+    document.title = '(' + safeCount + ') EditCode / index.html';
+  } else {
+    // 1. App Badging API によるバッジ消去
+    if (typeof navigator.clearAppBadge === 'function') {
+      try {
+        navigator.clearAppBadge().catch((error) => {
+          console.warn('アプリアイコンのバッジ消去に失敗しました:', error);
+        });
+      } catch (error) {
+        console.warn('clearAppBadge 呼び出しエラー:', error);
+      }
+    } else if (typeof navigator.setAppBadge === 'function') {
+      try {
+        navigator.setAppBadge(0).catch(() => {});
+      } catch (error) {}
+    }
+
+    // 2. Service Worker へのバッジ消去通知
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'CLEAR_BADGE'
+        });
+      }
+    } catch (error) {
+      console.warn('Service WorkerへのCLEAR_BADGE通知に失敗しました:', error);
+    }
+
+    // 3. ドキュメントタイトルの復元
+    document.title = 'EditCode / index.html';
   }
 }
 

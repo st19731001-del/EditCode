@@ -1,6 +1,6 @@
 // 修正: キャッシュ名にバージョンを付与し、資産パスの修正を確実に反映させる
 // （デプロイのたびにこの値を変えないと、古いキャッシュが永久に使われ続ける）
-const CACHE_NAME = 'editcode-v6-notification-sync';
+const CACHE_NAME = 'editcode-v7-badging-sync';
 
 // 修正: 実際のファイル配置(js/配下)に合わせてパスを修正。
 // 旧: './app.js' のみを指定していたため404となり、cache.addAll()全体が失敗し
@@ -102,33 +102,60 @@ self.addEventListener('push', function(event) {
     }
   };
 
-  event.waitUntil(
-    self.registration.showNotification(data.title, options)
-      .then(() => {
-        if (typeof self.registration.setAppBadge === 'function') {
-          return self.registration.setAppBadge(1);
-        }
-      })
-  );
+  const badgeCount = (typeof data.badgeCount === 'number' && data.badgeCount > 0)
+    ? data.badgeCount
+    : 1;
+
+  const showNotificationPromise = self.registration.showNotification(data.title, options);
+  const badgePromise = (typeof self.registration.setAppBadge === 'function')
+    ? self.registration.setAppBadge(badgeCount).catch(err => console.warn('[SW] setAppBadge error:', err))
+    : Promise.resolve();
+
+  event.waitUntil(Promise.all([showNotificationPromise, badgePromise]));
 });
 
-// 通知タップ時の挙動（アプリ画面を開く）
+// 通知タップ時の挙動（アプリ画面を開く & バッジをクリア）
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
 
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      for (let i = 0; i < clientList.length; i++) {
-        let client = clientList[i];
-        if (client.url && 'focus' in client) {
-          return client.focus();
-        }
+  const clearBadgePromise = (typeof self.registration.clearAppBadge === 'function')
+    ? self.registration.clearAppBadge().catch(err => console.warn('[SW] clearAppBadge error:', err))
+    : Promise.resolve();
+
+  const focusOrOpenPromise = clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+    for (let i = 0; i < clientList.length; i++) {
+      let client = clientList[i];
+      if (client.url && 'focus' in client) {
+        return client.focus();
       }
-      if (clients.openWindow) {
-        // 修正: '/' ではなく現在のSWスコープ('./')に対して開く
-        // ('/'だとGitHub Pagesのプロジェクトサイトではドメイン直下=存在しないページに飛んでいた)
-        return clients.openWindow('./');
-      }
-    })
-  );
+    }
+    if (clients.openWindow) {
+      // 修正: '/' ではなく現在のSWスコープ('./')に対して開く
+      // ('/'だとGitHub Pagesのプロジェクトサイトではドメイン直下=存在しないページに飛んでいた)
+      return clients.openWindow('./');
+    }
+  });
+
+  event.waitUntil(Promise.all([clearBadgePromise, focusOrOpenPromise]));
+});
+
+// ================= フロントエンドとのバッジ同期メッセージハンドラ =================
+self.addEventListener('message', function(event) {
+  if (!event.data) return;
+
+  if (event.data.type === 'CLEAR_BADGE') {
+    if (typeof self.registration.clearAppBadge === 'function') {
+      event.waitUntil(
+        self.registration.clearAppBadge().catch(err => console.warn('[SW] clearAppBadge failed:', err))
+      );
+    }
+  } else if (event.data.type === 'SYNC_BADGE') {
+    const count = typeof event.data.count === 'number' ? event.data.count : 0;
+    if (typeof self.registration.setAppBadge === 'function') {
+      event.waitUntil(
+        (count > 0 ? self.registration.setAppBadge(count) : self.registration.clearAppBadge())
+          .catch(err => console.warn('[SW] syncAppBadge failed:', err))
+      );
+    }
+  }
 });
